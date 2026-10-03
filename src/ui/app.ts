@@ -11,12 +11,15 @@ import {
   type Kind,
   type Move,
   moveTargets,
+  type Piece,
   other,
   row,
   SIZE,
   SQUARES,
 } from '../engine/rules';
 import { chooseMove } from '../engine/ai';
+import { createWebFeedback, type Feedback } from '../feedback';
+import * as fx from './fx';
 import { connect, type ConnectionStatus, newGameId, type OnlineGame, SERVER_URL } from '../online';
 import { type GameResult, INCREMENT_MS, type RoomView } from '../protocol';
 import { type Palette, spriteUrl } from '../sprites/render';
@@ -46,6 +49,42 @@ function formatClock(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+const BASE_TITLE = 'Dropship Chess';
+const DUST = ['#3d4a3c', '#8fa27c', '#e3dcbc'];
+const SPARKS = ['#d99a2b', '#f4efda', '#c4513b', '#263024'];
+const CONFETTI = ['#d99a2b', '#8fa27c', '#3d4a3c', '#c4513b', '#f4efda'];
+
+const positionKey = (s: GameState) => JSON.stringify([s.board, s.hands, s.turn, s.winner]);
+
+interface Transition {
+  move: Move;
+  mover: Colour;
+  /** The piece that was on the destination square, if any. */
+  captured: Piece | null;
+  promoted: boolean;
+}
+
+/**
+ * Describes how `next` follows from `prev` by a single move, or returns null
+ * if it doesn't (undo, new game, a resync from the server, or the server
+ * echoing a move we already showed).
+ */
+function transition(prev: GameState, next: GameState): Transition | null {
+  const move = next.lastMove;
+  if (!move || prev === next) return null;
+  let expected: GameState;
+  try {
+    expected = applyMove(prev, move);
+  } catch {
+    return null;
+  }
+  if (positionKey(expected) !== positionKey(next)) return null;
+  const captured = move.type === 'move' ? prev.board[move.to] : null;
+  const promoted = move.type === 'move' && prev.board[move.from]?.kind === 'P' &&
+    next.board[move.to]?.kind === 'Q';
+  return { move, mover: prev.turn, captured, promoted };
+}
+
 const isDark = (sq: number) => (row(sq) + col(sq)) % 2 === 1;
 const squareName = (sq: number) => `${'abcdef'[col(sq)]}${SIZE - row(sq)}`;
 
@@ -59,7 +98,11 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-export function mountApp(root: HTMLElement, store: KeyValueStore): void {
+export function mountApp(
+  root: HTMLElement,
+  store: KeyValueStore,
+  feedback: Feedback = createWebFeedback(store),
+): void {
   let history: History = loadHistory(store) ?? [initialState()];
   let selection: Selection = null;
   let cursor = SQUARES - 3; // keyboard cursor starts on White's King
@@ -82,6 +125,11 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
     flagClaimed: boolean;
   } | null = null;
 
+  /** The position drawn by the previous render, to spot moves worth animating. */
+  let lastRendered: GameState | null = null;
+  let lastResult: GameResult | null | undefined; // undefined until the first render
+  let lastTick = 0;
+
   const current = (): GameState =>
     online ? (online.view?.game ?? initialState()) : history[history.length - 1];
   const aiToMove = () =>
@@ -97,6 +145,9 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
     const w = current().winner;
     return w ? { winner: w, reason: 'king' } : null;
   };
+  /** The colour the person at this device plays, or null when both sides share it. */
+  const me = (): Colour | null =>
+    online ? (online.view?.you ?? null) : aiColour ? other(aiColour) : null;
   /** Clocks as they stand now, counting down the running side locally. */
   const liveClocks = (): Record<Colour, number> | null => {
     const v = online?.view;
@@ -111,11 +162,23 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
   const newBtn = el('button', { className: 'icon-btn', textContent: 'New', type: 'button' });
   const helpBtn = el('button', { className: 'icon-btn', textContent: '?', type: 'button' });
   helpBtn.setAttribute('aria-label', 'How to play');
+  const soundBtn = el('button', { className: 'icon-btn sound', type: 'button' });
+  soundBtn.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges">
+      <path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/>
+      <path class="waves" d="M11 5h1v6h-1zM13 3h1v10h-1z" fill="currentColor"/>
+      <path class="slash" d="M10 5l1-1 5 6-1 1zM10 10l5-6 1 1-5 6z" fill="currentColor"/>
+    </svg>`;
+  const syncSoundBtn = () => {
+    soundBtn.classList.toggle('muted', !feedback.enabled);
+    soundBtn.setAttribute('aria-label', feedback.enabled ? 'Mute sound and vibration' : 'Turn on sound and vibration');
+    soundBtn.setAttribute('aria-pressed', String(!feedback.enabled));
+  };
+  syncSoundBtn();
   const header = el(
     'header',
     { className: 'bar' },
     el('h1', {}, 'Dropship Chess'),
-    el('div', { className: 'actions' }, undoBtn, newBtn, helpBtn),
+    el('div', { className: 'actions' }, soundBtn, undoBtn, newBtn, helpBtn),
   );
 
   const boardEl = el('div', { className: 'board' });
@@ -227,7 +290,13 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
 
   const activateSquare = (sq: number) => {
     const s = current();
-    if (!canAct()) return;
+    if (!canAct()) {
+      if (!result()) {
+        feedback.play('invalid');
+        fx.shake(boardEl, 3);
+      }
+      return;
+    }
     if (selection && targets().includes(sq)) {
       const move: Move =
         selection.type === 'square'
@@ -253,6 +322,11 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
     } else if (s.board[sq]?.colour === s.turn &&
                !(selection?.type === 'square' && selection.sq === sq)) {
       selection = { type: 'square', sq };
+      feedback.play('select');
+    } else if (s.board[sq] && s.board[sq]!.colour !== s.turn && !selection) {
+      // Tapped an opponent's piece with nothing selected.
+      feedback.play('invalid');
+      fx.shake(pieces[sq], 3);
     } else {
       selection = null;
     }
@@ -264,6 +338,7 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
     if (!canAct() || colour !== s.turn || s.hands[colour][kind] <= 0) return;
     selection =
       selection?.type === 'hand' && selection.kind === kind ? null : { type: 'hand', kind };
+    if (selection) feedback.play('select');
     render();
   };
 
@@ -303,6 +378,8 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       conn: connect(id, store, {
         onState(view, receivedAt) {
           if (!online) return;
+          const prev = online.view;
+          if (prev && !prev.running && !prev.result && view.running) feedback.play('start');
           online.view = view;
           online.receivedAt = receivedAt;
           online.flagClaimed = false;
@@ -350,7 +427,11 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
   // ---- Rendering ----
   function render() {
     const s = current();
+    const prevState = lastRendered;
+    const tr = prevState && prevState !== s ? transition(prevState, s) : null;
+    lastRendered = s;
     const t = new Set(targets());
+    const movable = canAct();
     const last = s.lastMove;
     const checked = (['w', 'b'] as const).filter((c) => !s.winner && inCheck(s, c));
 
@@ -364,6 +445,7 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       cl.toggle('last', !!last && (last.to === sq || (last.type === 'move' && last.from === sq)));
       cl.toggle('check', !!p && p.kind === 'K' && checked.includes(p.colour));
       cl.toggle('cursor', showCursor && cursor === sq);
+      cl.toggle('movable', movable && p?.colour === s.turn);
       cell.setAttribute('aria-label', `${squareName(sq)}${
         p ? `, ${COLOUR_NAMES[p.colour].toLowerCase()} ${NAMES[p.kind]}` : ''
       }${t.has(sq) ? ', legal move' : ''}`);
@@ -432,10 +514,62 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       }`;
     }
     status.classList.toggle('over', !!res);
+    gameEl.classList.toggle('lost', !!res && me() !== null && res.winner !== me());
+    document.title = online && you && view?.running === you
+      ? `● Your move · ${BASE_TITLE}`
+      : res && me() ? `${res.winner === me() ? 'You win' : 'You lose'} · ${BASE_TITLE}` : BASE_TITLE;
+    if (tr && prevState) playTransition(tr, prevState, s);
+    // Celebrate (or commiserate) once when a game ends, however it ended.
+    if (lastResult === null && res) celebrate(res);
+    lastResult = res;
     // With the computer as White, undoing its opening move would just replay it.
     undoBtn.disabled = !!online || history.length <= (aiColour === 'w' ? 2 : 1);
     document.body.dataset.turn = s.turn;
     maybePlayAi();
+  }
+
+  /** Animation and sound for a single move, after the board has been redrawn. */
+  function playTransition(tr: Transition, prev: GameState, s: GameState) {
+    const { move, mover, captured } = tr;
+    const to = cells[move.to];
+    const mine = me() === null || mover === me();
+    if (move.type === 'drop') {
+      const slot = hands[mover].slots.get(move.kind)!.btn;
+      void fx.dropIn(spriteUrl(mover, move.kind, PALETTE), slot, to, pieces[move.to])
+        .then(() => fx.burst(to, DUST, 10));
+    } else {
+      const kind = prev.board[move.from]!.kind;
+      void fx.slide(spriteUrl(mover, kind, PALETTE), cells[move.from], to, pieces[move.to]).then(() => {
+        if (tr.promoted) {
+          fx.burst(to, SPARKS, 16);
+          fx.bump(pieces[move.to]);
+        }
+      });
+      if (captured) {
+        fx.burst(to, [...DUST, '#c4513b'], 14);
+        if (captured.kind !== 'K') {
+          const handKind = captured.promoted ? 'P' : (captured.kind as HandKind);
+          const slot = hands[mover].slots.get(handKind)!.btn;
+          void fx.captureTo(spriteUrl(mover, handKind, PALETTE), to, slot, slot.querySelector('img'));
+        }
+      }
+    }
+    if (s.winner) {
+      fx.shake(boardEl, 10);
+      return; // celebrate() plays the end-of-game sound
+    }
+    feedback.play(
+      captured ? 'capture' : move.type === 'drop' ? 'drop' : tr.promoted ? 'promote' : 'move',
+      { mine },
+    );
+    if (inCheck(s, s.turn)) setTimeout(() => feedback.play('check', { mine: false }), 200);
+  }
+
+  function celebrate(res: GameResult) {
+    const won = me() === null || res.winner === me();
+    feedback.play(won ? 'win' : 'lose');
+    if (won) setTimeout(() => fx.confetti(CONFETTI), 200);
+    fx.bump(status);
   }
 
   /** Updates the clock readouts; also asks the server to call a flag we can see. */
@@ -449,6 +583,16 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       clock.textContent = formatClock(clocks[colour]);
       clock.classList.toggle('running', running === colour);
       clock.classList.toggle('low', clocks[colour] < 20_000);
+      clock.classList.toggle('critical', running === colour && clocks[colour] < 10_000);
+    }
+    // Tick each second through your own last ten seconds.
+    const you = online?.view?.you;
+    if (clocks && you && running === you && clocks[you] > 0 && clocks[you] < 10_000) {
+      const sec = Math.ceil(clocks[you] / 1000);
+      if (sec !== lastTick) {
+        lastTick = sec;
+        feedback.play('tick');
+      }
     }
     if (online && clocks && running && clocks[running] <= 0 && !online.flagClaimed) {
       online.flagClaimed = true;
@@ -475,6 +619,11 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
     });
   }
   undoBtn.addEventListener('click', undo);
+  soundBtn.addEventListener('click', () => {
+    feedback.setEnabled(!feedback.enabled);
+    syncSoundBtn();
+    if (feedback.enabled) feedback.play('select');
+  });
   helpBtn.addEventListener('click', () => helpDialog.showModal());
   shareBtn.addEventListener('click', async () => {
     const url = location.href;

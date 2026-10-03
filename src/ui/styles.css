@@ -162,6 +162,140 @@ button {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
   pointer-events: none;
+  transition: translate 0.12s ease-out, scale 0.12s ease-out, filter 0.12s;
+}
+
+/* ---- Juice ---- */
+.cell.movable {
+  cursor: pointer;
+}
+
+/* Keep a lifted piece above its neighbours. */
+.cell.selected,
+.cell.movable:hover {
+  z-index: 2;
+}
+
+/* The selected piece lifts off the board. On Black's rotated board "up" is
+   the other way, because translate applies before the 180° rotation. */
+.cell.selected .piece {
+  translate: 0 -7%;
+  scale: 1.1;
+  filter: drop-shadow(0 4px 0 rgb(0 0 0 / 0.25));
+}
+
+.board.flipped .cell.selected .piece {
+  translate: 0 7%;
+  filter: drop-shadow(0 -4px 0 rgb(0 0 0 / 0.25));
+}
+
+@media (hover: hover) {
+  .cell.movable:hover .piece {
+    translate: 0 -3%;
+    scale: 1.04;
+  }
+
+  .board.flipped .cell.movable:hover .piece {
+    translate: 0 3%;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    scale: 0;
+  }
+  70% {
+    scale: 1.25;
+  }
+  to {
+    scale: 1;
+  }
+}
+
+.cell.target::after,
+.cell.capture::after {
+  animation: pop-in 0.18s ease-out;
+}
+
+@keyframes danger-pulse {
+  50% {
+    background: color-mix(in srgb, var(--danger) 45%, transparent);
+  }
+}
+
+.cell.check::after {
+  animation: danger-pulse 0.9s ease-in-out infinite;
+}
+
+button:not(.cell):active:not(:disabled) {
+  scale: 0.94;
+}
+
+.icon-btn,
+.slot,
+.sheet form button {
+  transition: scale 0.08s;
+}
+
+.board {
+  transition: filter 0.6s;
+}
+
+.game.lost .board {
+  filter: grayscale(0.75) brightness(0.92);
+}
+
+.fx-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.fx-ghost {
+  position: absolute;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  filter: drop-shadow(0 3px 0 rgb(0 0 0 / 0.2));
+}
+
+.fx-particle {
+  position: absolute;
+}
+
+.icon-btn.sound {
+  min-width: 40px;
+  padding: 0 8px;
+}
+
+.icon-btn.sound svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.icon-btn.sound .slash,
+.icon-btn.sound.muted .waves {
+  display: none;
+}
+
+.icon-btn.sound.muted .slash {
+  display: inline;
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    translate: 0 24px;
+    scale: 0.97;
+  }
+}
+
+.sheet[open] {
+  animation: sheet-in 0.2s ease-out;
 }
 
 .cell.light {
@@ -348,6 +482,16 @@ button {
   border-color: var(--danger);
 }
 
+@keyframes clock-pulse {
+  50% {
+    scale: 1.08;
+  }
+}
+
+.clock.critical {
+  animation: clock-pulse 1s ease-in-out infinite;
+}
+
 /* Black's view: rotate the board, keep the pieces upright, and put Black's
    dropships nearest the player. */
 .board.flipped {
@@ -502,7 +646,10 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hand {
-    transition: none;
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }
