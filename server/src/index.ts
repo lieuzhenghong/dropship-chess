@@ -21,7 +21,6 @@ import {
   type Room,
   runningClock,
   seatOf,
-  upgradeRoom,
 } from './room';
 
 interface Env {
@@ -108,7 +107,7 @@ export class Game extends DurableObject<Env> {
       // Already closed.
     }
     const stored = await this.ctx.storage.get<Room>('room');
-    if (stored) this.broadcast(upgradeRoom(stored), Date.now(), ws);
+    if (stored) this.broadcast(stored, Date.now(), ws);
   }
 
   private tokenOf(ws: WebSocket): string | null {
@@ -117,7 +116,7 @@ export class Game extends DurableObject<Env> {
 
   private async load(): Promise<Room> {
     const stored = await this.ctx.storage.get<Room>('room');
-    return stored ? upgradeRoom(stored) : newRoom();
+    return stored ?? newRoom();
   }
 
   private send(ws: WebSocket, msg: ServerMessage): void {

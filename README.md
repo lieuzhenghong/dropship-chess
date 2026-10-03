@@ -169,6 +169,7 @@ src/
   sprites/render.ts     sprite → transparent PNG (background removed by flood fill)
   storage.ts            KeyValueStore interface + localStorage implementation
   ui/app.ts, styles.css DOM UI
+  ui/status.ts          status-line and clock text (pure, tested)
 e2e/game.e2e.ts         Playwright browser tests (config: playwright.config.ts)
 wrangler.toml           Worker config (entry point: server/src/index.ts)
 server/

@@ -24,6 +24,7 @@ import * as fx from './fx';
 import { connect, type ConnectionStatus, newGameId, type OnlineGame, SERVER_URL } from '../online';
 import { type GameResult, INCREMENT_MS, type RoomView } from '../protocol';
 import { type Palette, spriteUrl } from '../sprites/render';
+import { COLOUR_NAMES, formatClock, localStatus, onlineStatus, onlineTurn } from './status';
 import { type History, type KeyValueStore, loadHistory, saveHistory } from '../storage';
 
 const PALETTE: Palette = { ink: '#263024', fill: '#f4efda' };
@@ -39,19 +40,10 @@ const AI_DELAY_MS = 200;
 const NAMES: Record<Kind, string> = {
   P: 'pawn', N: 'knight', B: 'bishop', R: 'rook', Q: 'queen', K: 'king',
 };
-const COLOUR_NAMES: Record<Colour, string> = { w: 'White', b: 'Black' };
 
 type Selection = { type: 'square'; sq: number } | { type: 'hand'; kind: HandKind } | null;
 
 const GAME_ID = /^[a-z0-9]{6,32}$/;
-
-/** m:ss, with tenths in the last ten seconds. */
-function formatClock(ms: number): string {
-  const t = Math.max(0, ms);
-  if (t < 10_000) return `0:0${(t / 1000).toFixed(1)}`;
-  const s = Math.ceil(t / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
 
 const BASE_TITLE = 'Dropship Chess';
 const DUST = ['#3d4a3c', '#8fa27c', '#e3dcbc'];
@@ -137,9 +129,6 @@ export function mountApp(
   const aiToMove = () =>
     !online && aiColour !== null && current().turn === aiColour && !current().winner;
   /** Whether the person at this device may move now. */
-  /** Whose move it is in a started, unfinished online game. */
-  const onlineTurn = (v: RoomView | null | undefined): Colour | null =>
-    v && v.started && !v.result ? v.game.turn : null;
   const canAct = (): boolean => {
     if (!online) return !current().winner && !aiToMove();
     const v = online.view;
@@ -359,7 +348,6 @@ export function mountApp(
   };
 
   const undo = () => {
-    if (undoBtn.disabled) return; // same rule as the button (keyboard U bypasses it)
     clearTimeout(aiTimer);
     history = history.slice(0, -1);
     // Against the computer, step back to the human's previous turn.
@@ -499,58 +487,24 @@ export function mountApp(
     });
 
     renderClocks();
-    const score = res?.winner === 'w' ? '1–0' : '0–1';
-    shareBtn.hidden = true;
+    shareBtn.hidden = !(online && view && !view.started && !res && you === 'w');
     resignBtn.hidden = !(online && you && view?.started && !res);
     rematchBtn.hidden = !(online && you && res);
     if (online && you && view && res) {
-      // `rematch` is missing if an older server is still deployed.
-      const mine = !!view.rematch?.[you];
-      const theirs = !!view.rematch?.[other(you)];
+      const mine = view.rematch[you];
+      const theirs = view.rematch[other(you)];
       rematchBtn.textContent = mine ? 'Rematch requested…' : theirs ? 'Accept rematch' : 'Rematch';
       rematchBtn.disabled = mine;
     }
     if (online) {
-      const opp = you ? other(you) : null;
-      const how = res?.reason === 'time' ? 'on time'
-        : res?.reason === 'resign' ? 'by resignation'
-        : res?.reason === 'stuck' ? '(no legal moves left)' : 'by capturing the King';
-      const turn = onlineTurn(view);
-      if (!view) {
-        status.textContent = 'Connecting…';
-      } else if (res?.reason === 'aborted') {
-        status.textContent = 'Game aborted: a first move wasn’t made in time.';
-      } else if (res && res.winner) {
-        status.textContent = you
-          ? `${res.winner === you ? 'You win' : 'You lose'} ${how}, ${score}`
-          : `${COLOUR_NAMES[res.winner]} wins ${how}, ${score}`;
-      } else if (!view.started) {
-        status.textContent = 'Waiting for your opponent to open the link…';
-        shareBtn.hidden = you !== 'w';
-      } else if (!you) {
-        status.textContent = `Watching · ${COLOUR_NAMES[s.turn]} to move`;
-      } else {
-        status.textContent = `${turn === you ? 'Your move' : 'Opponent’s move'}${
-          turn === you && checked.includes(you) ? ' · your King is under attack' : ''
-        }${opp && !view.connected[opp] ? ' · opponent offline' : ''}`;
-      }
+      status.textContent = onlineStatus(view, checked);
       if (view && !res && view.abortIn !== null && view.started) {
         status.append(abortEl);
         renderAbort();
       }
       if (online.status !== 'open' && view) status.append(' · reconnecting…');
-    } else if (s.winner && aiColour !== null) {
-      status.textContent = `${s.winner === aiColour ? 'Computer wins' : 'You win'}${
-        s.winBy === 'stuck' ? ' (no legal moves left)' : ''}, ${score}`;
-    } else if (s.winner) {
-      status.textContent = `${COLOUR_NAMES[s.winner]} wins${
-        s.winBy === 'stuck' ? `: ${COLOUR_NAMES[other(s.winner)]} has no legal moves` : ''}, ${score}`;
-    } else if (aiToMove()) {
-      status.textContent = 'Computer is thinking…';
     } else {
-      status.textContent = `${aiColour === null ? `${COLOUR_NAMES[s.turn]} to move` : 'Your move'}${
-        checked.includes(s.turn) ? ' · your King is under attack' : ''
-      }`;
+      status.textContent = localStatus(s, aiColour, checked);
     }
     status.classList.toggle('over', !!res);
     gameEl.classList.toggle('lost', !!res?.winner && me() !== null && res.winner !== me());
