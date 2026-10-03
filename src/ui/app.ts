@@ -497,9 +497,7 @@ export function mountApp(
       const opp = you ? other(you) : null;
       const how = res?.reason === 'time' ? 'on time' : 'by capturing the King';
       const turn = onlineTurn(view);
-      if (online.status === 'expired') {
-        status.textContent = 'This game has expired. Tap New to start another.';
-      } else if (!view) {
+      if (!view) {
         status.textContent = 'Connecting…';
       } else if (res?.reason === 'aborted') {
         status.textContent = 'Game aborted: a first move wasn’t made in time.';
@@ -521,9 +519,7 @@ export function mountApp(
         status.append(abortEl);
         renderAbort();
       }
-      if (online.status !== 'open' && online.status !== 'expired' && view) {
-        status.append(' · reconnecting…');
-      }
+      if (online.status !== 'open' && view) status.append(' · reconnecting…');
     } else if (s.winner && aiColour !== null) {
       status.textContent = `${s.winner === aiColour ? 'Computer wins' : 'You win'}, ${score}`;
     } else if (s.winner) {
@@ -595,10 +591,14 @@ export function mountApp(
     if (won) setTimeout(() => fx.confetti(CONFETTI), 200);
   }
 
-  /** The first-move countdown shown in the status line. */
+  /** The first-move countdown shown in the status line; asks the server to abort at zero. */
   function renderAbort() {
     const left = abortLeft();
     if (left === null) return;
+    if (left <= 0 && online && !online.flagClaimed) {
+      online.flagClaimed = true;
+      online.conn.claimFlag();
+    }
     const mine = online?.view && onlineTurn(online.view) === online.view.you;
     abortEl.textContent = ` · ${mine ? 'first move within' : 'first move due in'} ${Math.ceil(left / 1000)}s`;
     abortEl.classList.toggle('urgent', left < 10_000);

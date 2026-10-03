@@ -2,14 +2,13 @@
 // automatically (mobile browsers drop sockets whenever the screen locks).
 
 import type { Move } from './engine/rules';
-import { CLOSE_GAME_EXPIRED, type ClientMessage, type RoomView, type ServerMessage } from './protocol';
+import type { ClientMessage, RoomView, ServerMessage } from './protocol';
 import type { KeyValueStore } from './storage';
 
 /** Game server base URL (ws:// or wss://), set at build time. Empty disables online play. */
 export const SERVER_URL: string = import.meta.env.VITE_SERVER_URL ?? '';
 
-/** 'expired' means the server has deleted the game; we stop reconnecting. */
-export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'expired';
+export type ConnectionStatus = 'connecting' | 'open' | 'closed';
 
 export interface OnlineGame {
   sendMove(move: Move): void;
@@ -89,14 +88,9 @@ export function connect(gameId: string, store: KeyValueStore, handlers: OnlineHa
       if (msg.t === 'state') handlers.onState(msg, Date.now());
       else if (msg.t === 'error') handlers.onError(msg.message);
     };
-    socket.onclose = (e) => {
+    socket.onclose = () => {
       if (ws !== socket) return;
       ws = null;
-      if (e.code === CLOSE_GAME_EXPIRED) {
-        closedByUs = true;
-        handlers.onStatus('expired');
-        return;
-      }
       handlers.onStatus('closed');
       if (closedByUs) return;
       retryTimer = setTimeout(open, retryDelay);

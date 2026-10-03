@@ -4,10 +4,13 @@
 // Clock rules (as on most chess sites): each side's first move is untimed but
 // must be made within FIRST_MOVE_MS, or the game is aborted with no result.
 // The clocks start once both sides have made their first move.
+//
+// There are no timers: deadlines are checked (checkTimeouts) whenever a
+// message arrives, and the waiting player's app sends one at the deadline. A
+// game both players have left stays unresolved until someone reopens it.
 
 import { applyMove, type Colour, type GameState, initialState, isLegal, type Move, other } from '../../src/engine/rules';
 import {
-  ABANDONED_GAME_TTL_MS,
   FIRST_MOVE_MS,
   type GameResult,
   INCREMENT_MS,
@@ -26,13 +29,11 @@ export interface Room {
   /** Deadline for the side to move's untimed first move; null otherwise. */
   readonly abortAt: number | null;
   readonly result: GameResult | null;
-  /** Last change to the room, which drives deletion. */
-  readonly updatedAt: number;
 }
 
 export type Outcome = { room: Room; error?: string };
 
-export function newRoom(now = 0): Room {
+export function newRoom(): Room {
   return {
     tokens: {},
     game: initialState(),
@@ -41,13 +42,12 @@ export function newRoom(now = 0): Room {
     turnStart: null,
     abortAt: null,
     result: null,
-    updatedAt: now,
   };
 }
 
 /** Fills in fields missing from rooms saved by older versions of the server. */
-export function upgradeRoom(stored: Partial<Room>, now: number): Room {
-  const room = { ...newRoom(now), ...stored };
+export function upgradeRoom(stored: Partial<Room>): Room {
+  const room = { ...newRoom(), ...stored };
   if (stored.plies === undefined) {
     // Old rooms started their clock as soon as Black joined.
     return { ...room, plies: stored.turnStart != null || stored.result ? 2 : 0 };
@@ -75,7 +75,7 @@ export const isStarted = (room: Room): boolean => !!room.tokens.b;
 export function checkTimeouts(room: Room, now: number): Room {
   if (room.result) return room;
   if (room.abortAt !== null && now >= room.abortAt) {
-    return { ...room, abortAt: null, result: { winner: null, reason: 'aborted' }, updatedAt: now };
+    return { ...room, abortAt: null, result: { winner: null, reason: 'aborted' } };
   }
   const clocks = clocksAt(room, now);
   const turn = room.game.turn;
@@ -85,7 +85,6 @@ export function checkTimeouts(room: Room, now: number): Room {
     clocks,
     turnStart: null,
     result: { winner: other(turn), reason: 'time' },
-    updatedAt: now,
   };
 }
 
@@ -97,11 +96,11 @@ export function checkTimeouts(room: Room, now: number): Room {
 export function join(room: Room, token: string, now: number): { room: Room; seat: Colour | null } {
   for (const c of ['w', 'b'] as const) if (room.tokens[c] === token) return { room, seat: c };
   if (!room.tokens.w) {
-    return { room: { ...room, tokens: { ...room.tokens, w: token }, updatedAt: now }, seat: 'w' };
+    return { room: { ...room, tokens: { ...room.tokens, w: token } }, seat: 'w' };
   }
   if (!room.tokens.b) {
     return {
-      room: { ...room, tokens: { ...room.tokens, b: token }, abortAt: now + FIRST_MOVE_MS, updatedAt: now },
+      room: { ...room, tokens: { ...room.tokens, b: token }, abortAt: now + FIRST_MOVE_MS },
       seat: 'b',
     };
   }
@@ -132,33 +131,6 @@ export function move(room: Room, seat: Colour | null, mv: Move, now: number): Ou
       turnStart: result || plies < 2 ? null : now,
       abortAt: result || plies >= 2 ? null : now + FIRST_MOVE_MS,
       result,
-      updatedAt: now,
     },
   };
-}
-
-/**
- * When the room should be deleted, or null to keep it. Only games that never
- * got going are deleted: nobody joined, or it was aborted before both first
- * moves. Games with real moves are kept as a record.
- */
-export function expiresAt(room: Room): number | null {
-  const neverStarted = room.result ? room.result.reason === 'aborted' : room.plies === 0;
-  return neverStarted ? room.updatedAt + ABANDONED_GAME_TTL_MS : null;
-}
-
-/**
- * The next time the server must wake up for this room (the first-move
- * deadline, the side to move running out of time, or deletion), or null if
- * nothing is pending.
- */
-export function nextWake(room: Room): number | null {
-  const times: number[] = [];
-  const expiry = expiresAt(room);
-  if (expiry !== null) times.push(expiry);
-  if (!room.result) {
-    if (room.abortAt !== null) times.push(room.abortAt);
-    if (room.turnStart !== null) times.push(room.turnStart + room.clocks[room.game.turn]);
-  }
-  return times.length ? Math.min(...times) : null;
 }

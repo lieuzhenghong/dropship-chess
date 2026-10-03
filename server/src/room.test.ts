@@ -1,19 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { square } from '../../src/engine/rules';
-import {
-  ABANDONED_GAME_TTL_MS,
-  FIRST_MOVE_MS,
-  INCREMENT_MS,
-  INITIAL_CLOCK_MS,
-} from '../../src/protocol';
+import { FIRST_MOVE_MS, INCREMENT_MS, INITIAL_CLOCK_MS } from '../../src/protocol';
 import {
   checkTimeouts,
   clocksAt,
-  expiresAt,
   join,
   move,
   newRoom,
-  nextWake,
   type Room,
   runningClock,
   upgradeRoom,
@@ -25,7 +18,7 @@ const a2a3 = { type: 'move', from: square(4, 0), to: square(3, 0) } as const;
 const f5f4 = { type: 'move', from: square(1, 5), to: square(2, 5) } as const;
 
 function joined(now = 0): Room {
-  let room = join(newRoom(now), 'alice', now).room;
+  let room = join(newRoom(), 'alice', now).room;
   room = join(room, 'bob', now).room;
   return room;
 }
@@ -135,42 +128,12 @@ describe('checkTimeouts', () => {
   });
 });
 
-describe('nextWake and expiry', () => {
-  it('wakes for the first-move deadline, then for the running clock', () => {
-    const r = joined(0);
-    expect(nextWake(r)).toBe(FIRST_MOVE_MS);
-    const c = clocking();
-    expect(nextWake(c)).toBe(2000 + INITIAL_CLOCK_MS);
-  });
-
-  it('deletes games that never got going, a week after their last activity', () => {
-    const lone = join(newRoom(), 'alice', 100).room;
-    expect(nextWake(lone)).toBe(100 + ABANDONED_GAME_TTL_MS);
-    const aborted = checkTimeouts(joined(0), FIRST_MOVE_MS);
-    expect(nextWake(aborted)).toBe(FIRST_MOVE_MS + ABANDONED_GAME_TTL_MS);
-    // Aborted after White's first move still never got going.
-    const half = checkTimeouts(move(joined(0), 'w', e2e3, 1000).room, 1000 + FIRST_MOVE_MS);
-    expect(half.result?.reason).toBe('aborted');
-    expect(expiresAt(half)).toBe(1000 + FIRST_MOVE_MS + ABANDONED_GAME_TTL_MS);
-  });
-
-  it('keeps games with real moves, finished or not', () => {
-    const c = clocking();
-    expect(expiresAt(c)).toBeNull();
-    const flagged = checkTimeouts(c, 2000 + INITIAL_CLOCK_MS);
-    expect(flagged.result?.reason).toBe('time');
-    expect(expiresAt(flagged)).toBeNull();
-    expect(nextWake(flagged)).toBeNull();
-  });
-});
-
 describe('upgradeRoom', () => {
   it('treats rooms saved before untimed first moves as already clocking', () => {
-    const { plies, abortAt, updatedAt, ...old } = clocking();
-    void plies; void abortAt; void updatedAt;
-    const up = upgradeRoom(old, 99);
+    const { plies, abortAt, ...old } = clocking();
+    void plies; void abortAt;
+    const up = upgradeRoom(old);
     expect(up.plies).toBe(2);
     expect(up.abortAt).toBeNull();
-    expect(up.updatedAt).toBe(99);
   });
 });

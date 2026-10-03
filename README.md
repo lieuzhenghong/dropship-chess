@@ -74,17 +74,16 @@ games. Anyone else who opens the link can watch.
 The server (`server/`) is a Cloudflare Worker with one
 [Durable Object](https://developers.cloudflare.com/durable-objects/) per game.
 It validates every move with the same rules engine, `src/engine/rules.ts`, and
-keeps the clocks. A single Durable Object alarm wakes the game for whatever
-comes next: a first-move deadline, the side to move running out of time (so a
-game ends on time even if nobody's app is open), or deleting a game that never
-got going (nobody joined, or aborted before both first moves) a week after its
-last activity. Clients of a deleted game are disconnected with close code 4000
-and told it has expired. Games with real moves are kept indefinitely, as a
-record for replays or stats later; at a few KB each, storage isn't a concern. The
+keeps the clocks. It runs no timers: the clocks and the first-move deadline
+are checked whenever a message arrives, and when a deadline passes the waiting
+player's app asks the server to check. A game both players have left stays
+unresolved until someone reopens the link, which resolves it immediately.
+Games are kept indefinitely, as a record for replays or stats later; at a few
+KB each, storage isn't a concern. The
 game logic is in `server/src/room.ts`, with unit tests.
 
 Deliberately left out: accounts, matchmaking, rematch and resign buttons,
-chat, lag compensation, and a configurable time control (it's two constants
+chat, lag compensation, server-side timers, and a configurable time control (it's two constants
 in `src/protocol.ts`).
 
 ```sh
