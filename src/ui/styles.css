@@ -398,6 +398,11 @@ button {
   font-weight: 700;
 }
 
+.sheet form.stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .sheet form button.primary {
   background: var(--ink);
   color: var(--paper);

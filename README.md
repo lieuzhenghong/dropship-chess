@@ -5,7 +5,8 @@ chess on a 6×6 board where captured pieces switch sides and can be "dropped"
 back onto any empty square. White starts with knights and Black with bishops,
 so you have to capture the other side's minor pieces to get them.
 
-Two-player pass-and-play, touch-first, and it also works with a keyboard. The
+Two players on one device, or against a rudimentary computer opponent.
+Touch-first, and it also works with a keyboard. The
 pieces are the original 32×32 1-bit sprites, extracted from `SpriteSheet.jack`.
 
 ## Running
@@ -39,6 +40,19 @@ Changes from the original Jack version:
 | Dropping a pawn on the last rank | Allowed (a TODO in the source) | Not allowed |
 | Dropships | 12 fixed slots, picked with keys 1–9, 0, -, = | Grouped by piece type with a count, keys 1–5 |
 | Undo / save | None | Undo history, and the game persists across reloads |
+| AI | None (listed as a future extension) | A basic computer opponent |
+
+## Computer opponent
+
+Choose "vs computer" under **New**. It's meant as something to test against,
+not a strong player: `src/engine/ai.ts` runs a three-ply negamax search with
+alpha-beta pruning (its move, your reply, its next move) and scores positions
+by material only, counting pieces in hand. It takes free pieces, captures the
+King when it can, and avoids the most obvious blunders, but it has no
+positional sense and can't see beyond three plies. Equal moves are chosen at
+random. It runs on the main thread, taking a few milliseconds per move on a
+laptop, so no worker is needed yet. Against the computer, Undo takes back your
+last move together with its reply.
 
 ## Controls
 
@@ -52,6 +66,7 @@ Changes from the original Jack version:
 ```
 src/
   engine/rules.ts       pure, immutable rules engine (no DOM), plus tests
+  engine/ai.ts          computer opponent (negamax + alpha-beta, material eval)
   sprites/data.ts       generated from SpriteSheet.jack
   sprites/render.ts     sprite → transparent PNG (background removed by flood fill)
   storage.ts            KeyValueStore interface + localStorage implementation

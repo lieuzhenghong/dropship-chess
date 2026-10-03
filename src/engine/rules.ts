@@ -231,3 +231,16 @@ export function inCheck(state: GameState, colour: Colour): boolean {
   }
   return false;
 }
+
+/** Every legal move for the side to move: board moves, then drops. */
+export function allMoves(state: GameState): Move[] {
+  if (state.winner) return [];
+  const moves: Move[] = [];
+  for (let from = 0; from < SQUARES; from++) {
+    for (const to of moveTargets(state, from)) moves.push({ type: 'move', from, to });
+  }
+  for (const kind of HAND_KINDS) {
+    for (const to of dropTargets(state, kind)) moves.push({ type: 'drop', kind, to });
+  }
+  return moves;
+}

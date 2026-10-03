@@ -15,12 +15,16 @@ import {
   SIZE,
   SQUARES,
 } from '../engine/rules';
+import { chooseMove } from '../engine/ai';
 import { type Palette, spriteUrl } from '../sprites/render';
 import { type History, type KeyValueStore, loadHistory, saveHistory } from '../storage';
 
 const PALETTE: Palette = { ink: '#263024', fill: '#f4efda' };
 const MAX_HISTORY = 400;
 const SEEN_HELP_KEY = 'dropship-chess:seen-help';
+const MODE_KEY = 'dropship-chess:mode';
+/** Pause before the computer moves, so its move is visible as a separate step. */
+const AI_DELAY_MS = 450;
 
 const NAMES: Record<Kind, string> = {
   P: 'pawn', N: 'knight', B: 'bishop', R: 'rook', Q: 'queen', K: 'king',
@@ -47,8 +51,15 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
   let selection: Selection = null;
   let cursor = SQUARES - 3; // keyboard cursor starts on White's King
   let showCursor = false;
+  /** Which colour the computer plays, or null for two players. */
+  let aiColour: Colour | null = (() => {
+    const m = store.get(MODE_KEY);
+    return m === 'w' || m === 'b' ? m : null;
+  })();
+  let aiTimer: ReturnType<typeof setTimeout> | undefined;
 
   const current = () => history[history.length - 1];
+  const aiToMove = () => aiColour !== null && current().turn === aiColour && !current().winner;
 
   // ---- DOM ----
   const undoBtn = el('button', { className: 'icon-btn', textContent: 'Undo', type: 'button' });
@@ -83,7 +94,8 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
   const makeHand = (colour: Colour) => {
     const slots = new Map<HandKind, { btn: HTMLButtonElement; count: HTMLSpanElement }>();
     const section = el('section', { className: `hand hand-${colour}` });
-    section.append(el('h2', {}, `${COLOUR_NAMES[colour]}’s dropships`));
+    const title = el('h2');
+    section.append(title);
     const list = el('div', { className: 'slots' });
     HAND_KINDS.forEach((kind, i) => {
       const count = el('span', { className: 'count' });
@@ -100,7 +112,7 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       list.append(btn);
     });
     section.append(list);
-    return { section, slots };
+    return { section, slots, title };
   };
   const hands = { b: makeHand('b'), w: makeHand('w') };
 
@@ -122,6 +134,7 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       <li>Pawns move one square, never two. A pawn that reaches the far rank becomes a
         Queen, and turns back into a pawn if it’s captured. No castling, no en passant.</li>
       <li>Pawns can’t be dropped onto the far rank.</li>
+      <li>Tap <b>New</b> to play two players on one device, or against the computer.</li>
     </ul>
     <p class="keys">Keyboard: arrows move, Space selects, Esc cancels, 1–5 pick a dropship,
       U undoes.</p>
@@ -129,12 +142,15 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
 
   const confirmDialog = el('dialog', { className: 'sheet' });
   confirmDialog.innerHTML = `
-    <h2>Start a new game?</h2>
-    <p>The current game will be lost.</p>
-    <form method="dialog" class="row">
+    <h2>New game</h2>
+    <p class="warn">The current game will be lost.</p>
+    <form method="dialog" class="stack">
+      <button value="pvp" class="primary">2 players, one device</button>
+      <button value="b" class="primary">vs computer: you’re White</button>
+      <button value="w" class="primary">vs computer: you’re Black</button>
       <button value="cancel">Cancel</button>
-      <button value="ok" class="primary">New game</button>
     </form>`;
+  const warn = confirmDialog.querySelector<HTMLElement>('.warn')!;
 
   root.replaceChildren(
     header,
@@ -165,7 +181,7 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
 
   const activateSquare = (sq: number) => {
     const s = current();
-    if (s.winner) return;
+    if (s.winner || aiToMove()) return;
     if (selection && targets().includes(sq)) {
       const move: Move =
         selection.type === 'square'
@@ -183,25 +199,44 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
 
   const activateHand = (colour: Colour, kind: HandKind) => {
     const s = current();
-    if (s.winner || colour !== s.turn || s.hands[colour][kind] <= 0) return;
+    if (s.winner || aiToMove() || colour !== s.turn || s.hands[colour][kind] <= 0) return;
     selection =
       selection?.type === 'hand' && selection.kind === kind ? null : { type: 'hand', kind };
     render();
   };
 
   const undo = () => {
-    if (history.length <= 1) return;
+    if (undoBtn.disabled) return; // same rule as the button (keyboard U bypasses it)
+    clearTimeout(aiTimer);
     history = history.slice(0, -1);
+    // Against the computer, step back to the human's previous turn.
+    while (history.length > 1 && aiToMove()) history = history.slice(0, -1);
     selection = null;
     saveHistory(store, history);
     render();
   };
 
-  const newGame = () => {
+  const newGame = (ai: Colour | null) => {
+    clearTimeout(aiTimer);
+    aiColour = ai;
+    store.set(MODE_KEY, ai ?? 'pvp');
     history = [initialState()];
     selection = null;
     saveHistory(store, history);
     render();
+  };
+
+  /** Schedules the computer's move if it's its turn. Called after every render. */
+  const maybePlayAi = () => {
+    clearTimeout(aiTimer);
+    if (!aiToMove()) return;
+    aiTimer = setTimeout(() => {
+      if (!aiToMove()) return;
+      const move = chooseMove(current());
+      if (!move) return;
+      commit(applyMove(current(), move));
+      render();
+    }, AI_DELAY_MS);
   };
 
   // ---- Rendering ----
@@ -227,8 +262,11 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
     });
 
     (['w', 'b'] as const).forEach((colour) => {
-      const { section, slots } = hands[colour];
+      const { section, slots, title } = hands[colour];
       section.classList.toggle('active', !s.winner && s.turn === colour);
+      title.textContent =
+        aiColour === null ? `${COLOUR_NAMES[colour]}’s dropships`
+        : colour === aiColour ? 'Computer’s dropships' : 'Your dropships';
       for (const [kind, { btn, count }] of slots) {
         const n = s.hands[colour][kind];
         count.textContent = n > 1 ? `×${n}` : '';
@@ -240,16 +278,23 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       }
     });
 
-    if (s.winner) {
-      status.textContent = `${COLOUR_NAMES[s.winner]} wins, ${s.winner === 'w' ? '1–0' : '0–1'}`;
+    const score = s.winner === 'w' ? '1–0' : '0–1';
+    if (s.winner && aiColour !== null) {
+      status.textContent = `${s.winner === aiColour ? 'Computer wins' : 'You win'}, ${score}`;
+    } else if (s.winner) {
+      status.textContent = `${COLOUR_NAMES[s.winner]} wins, ${score}`;
+    } else if (aiToMove()) {
+      status.textContent = 'Computer is thinking…';
     } else {
-      status.textContent = `${COLOUR_NAMES[s.turn]} to move${
+      status.textContent = `${aiColour === null ? `${COLOUR_NAMES[s.turn]} to move` : 'Your move'}${
         checked.includes(s.turn) ? ' · your King is under attack' : ''
       }`;
     }
     status.classList.toggle('over', !!s.winner);
-    undoBtn.disabled = history.length <= 1;
+    // With the computer as White, undoing its opening move would just replay it.
+    undoBtn.disabled = history.length <= (aiColour === 'w' ? 2 : 1);
     document.body.dataset.turn = s.turn;
+    maybePlayAi();
   }
 
   // ---- Input ----
@@ -270,12 +315,14 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
   undoBtn.addEventListener('click', undo);
   helpBtn.addEventListener('click', () => helpDialog.showModal());
   newBtn.addEventListener('click', () => {
-    if (history.length <= 1) return newGame();
+    warn.hidden = history.length <= 1 || !!current().winner;
     confirmDialog.returnValue = '';
     confirmDialog.showModal();
   });
   confirmDialog.addEventListener('close', () => {
-    if (confirmDialog.returnValue === 'ok') newGame();
+    const v = confirmDialog.returnValue;
+    if (v === 'pvp') newGame(null);
+    else if (v === 'w' || v === 'b') newGame(v);
   });
   helpDialog.addEventListener('close', () => store.set(SEEN_HELP_KEY, '1'));
 
