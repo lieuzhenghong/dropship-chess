@@ -1,0 +1,445 @@
+:root {
+  --paper: #e8e2c8;
+  --ink: #3d4a3c;
+  --sq-light: #e3dcbc;
+  --sq-dark: #8fa27c;
+  --bg: #d9d2b4;
+  --text: #2a3329;
+  --muted: #6b7466;
+  --accent: #d99a2b;
+  --danger: #c4513b;
+  --radius: 10px;
+  --font: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* Space the board can't use: header, two hands, status, gaps, safe areas. */
+  --chrome: calc(
+    250px + env(safe-area-inset-top) + env(safe-area-inset-bottom)
+  );
+  --board: min(
+    100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right),
+    100dvh - var(--chrome),
+    540px
+  );
+  --cell: calc(var(--board) / 6);
+  --slot: min(calc(var(--cell) * 0.82), 56px);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e241d;
+    --text: #e8e2c8;
+    --muted: #9aa393;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+#app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(env(safe-area-inset-top) + 8px) calc(env(safe-area-inset-right) + 12px)
+    calc(env(safe-area-inset-bottom) + 8px) calc(env(safe-area-inset-left) + 12px);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* ---- Header ---- */
+.bar {
+  width: min(100%, var(--board) + 2 * var(--slot) + 120px);
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.bar h1 {
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+.icon-btn {
+  min-width: 44px;
+  height: 36px;
+  padding: 0 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- Layout ---- */
+.stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.game {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+
+/* ---- Board ---- */
+.board {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  width: var(--board);
+  height: var(--board);
+  border: 3px solid var(--ink);
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px var(--paper);
+  background: var(--ink);
+}
+
+.cell {
+  position: relative;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+/* The piece sits above the highlight overlay (::after) but below the cursor. */
+.piece {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  pointer-events: none;
+}
+
+.cell.light {
+  background-color: var(--sq-light);
+}
+
+.cell.dark {
+  background-color: var(--sq-dark);
+}
+
+.cell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cell.last::after {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.cell.selected::after {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: inset 0 0 0 3px var(--accent);
+}
+
+.cell.target::after {
+  inset: 36%;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.cell.capture::after {
+  box-shadow: inset 0 0 0 4px var(--accent);
+}
+
+.cell.check::after {
+  box-shadow: inset 0 0 0 4px var(--danger);
+  background: color-mix(in srgb, var(--danger) 25%, transparent);
+}
+
+/* Keyboard cursor, drawn as corner brackets like the original sprite. */
+.cell.cursor::before,
+.cell:focus-visible::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  z-index: 2;
+  pointer-events: none;
+  --c: var(--accent);
+  --l: 28%;
+  --w: 3px;
+  background:
+    linear-gradient(var(--c) 0 0) top left / var(--l) var(--w),
+    linear-gradient(var(--c) 0 0) top left / var(--w) var(--l),
+    linear-gradient(var(--c) 0 0) top right / var(--l) var(--w),
+    linear-gradient(var(--c) 0 0) top right / var(--w) var(--l),
+    linear-gradient(var(--c) 0 0) bottom left / var(--l) var(--w),
+    linear-gradient(var(--c) 0 0) bottom left / var(--w) var(--l),
+    linear-gradient(var(--c) 0 0) bottom right / var(--l) var(--w),
+    linear-gradient(var(--c) 0 0) bottom right / var(--w) var(--l);
+  background-repeat: no-repeat;
+}
+
+/* ---- Hands ("dropships") ---- */
+.hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+.hand.active {
+  opacity: 1;
+}
+
+.hand h2 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hand.active h2 {
+  color: var(--text);
+}
+
+.slots {
+  display: flex;
+  gap: 6px;
+}
+
+.slot {
+  position: relative;
+  width: var(--slot);
+  height: var(--slot);
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper);
+  overflow: visible;
+}
+
+.slot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.slot:disabled {
+  cursor: default;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--ink) 35%, transparent);
+  background: transparent;
+}
+
+.slot:disabled img {
+  opacity: 0;
+}
+
+.hand:not(.active) .slot {
+  cursor: default;
+}
+
+.slot.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent);
+}
+
+.count {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  min-width: 20px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.count:empty {
+  display: none;
+}
+
+/* ---- Status ---- */
+.status {
+  margin: 14px 0 0;
+  min-height: 1.6em;
+  font-weight: 700;
+  text-align: center;
+}
+
+.status.over {
+  color: var(--paper);
+  background: var(--ink);
+  padding: 4px 12px;
+  border-radius: var(--radius);
+}
+
+/* ---- Dialogs ---- */
+.sheet {
+  width: min(92vw, 460px);
+  max-height: 85dvh;
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  padding: 20px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.sheet::backdrop {
+  background: rgb(20 25 20 / 0.55);
+}
+
+.sheet h2 {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sheet .byline {
+  margin-top: 0;
+  font-size: 0.8rem;
+}
+
+.sheet a {
+  color: inherit;
+}
+
+.sheet ul {
+  padding-left: 1.1em;
+  line-height: 1.45;
+  font-size: 0.9rem;
+}
+
+.sheet li + li {
+  margin-top: 6px;
+}
+
+.sheet .keys {
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
+.sheet form {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sheet form button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: transparent;
+  font-weight: 700;
+}
+
+.sheet form button.primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* ---- Landscape / wide screens: hands either side, like the original ---- */
+@media (orientation: landscape) and (min-aspect-ratio: 4/3) {
+  :root {
+    --chrome: calc(110px + env(safe-area-inset-top) + env(safe-area-inset-bottom));
+    /* Five slots stacked beside the board; must not depend on --board (cycle). */
+    --slot: min(56px, (100dvh - var(--chrome)) / 5.6);
+    --board: min(
+      100dvh - var(--chrome),
+      100vw - 2 * var(--slot) - 2 * 90px - env(safe-area-inset-left) - env(safe-area-inset-right),
+      600px
+    );
+  }
+
+  .game {
+    flex-direction: row;
+    gap: 24px;
+  }
+
+  .stage {
+    justify-content: flex-start;
+  }
+
+  .hand {
+    width: calc(var(--slot) + 70px);
+  }
+
+  .slots {
+    flex-direction: column;
+  }
+
+  .hand h2 {
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hand {
+    transition: none;
+  }
+}
