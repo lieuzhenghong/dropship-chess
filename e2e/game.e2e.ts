@@ -58,9 +58,12 @@ test('vs computer: it replies to a move', async ({ browser }) => {
   const { page, errors } = await open(browser);
   await page.getByRole('button', { name: 'New' }).click();
   await page.locator('dialog[open] button[value=ai]').click();
-  await expect(status(page)).toHaveText('Your move'); // the computer opens if it's White
+  await expect(status(page)).toHaveText(/^Your move/); // the computer opens if it's White
+  // Your colour is at the bottom: the board is flipped when the computer is White.
+  const computer = await page.evaluate(() => localStorage.getItem('dropship-chess:mode'));
+  await expect(page.locator('.board')).toHaveClass(computer === 'w' ? /flipped/ : /^(?!.*flipped)/);
   await anyMove(page);
-  await expect(status(page)).toHaveText('Your move');
+  await expect(status(page)).toHaveText(/^Your move/);
   expect(errors).toEqual([]);
 });
 
