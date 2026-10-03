@@ -255,7 +255,7 @@ export function mountApp(
         stops you walking into check, so watch out.</li>
       <li>Pawns move one square, never two. A pawn that reaches the far rank becomes a
         Queen, and turns back into a pawn if it’s captured. No castling, no en passant.</li>
-      <li>Pawns can’t be dropped onto the far rank.</li>
+      <li>You can’t drop a pawn into your opponent’s starting rows.</li>
       <li>Tap <b>New</b> to play two players on one device, against the computer${
         SERVER_URL ? ', or online against a friend (3 minutes each, plus 2 seconds per move)' : ''}.</li>
     </ul>

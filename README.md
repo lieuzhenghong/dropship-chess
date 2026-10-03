@@ -39,7 +39,9 @@ serves.
 - Moves are standard chess, except that pawns only ever step one square.
   There's no castling and no en passant.
 - Capturing a piece adds it to your **dropships**. On your turn, you can drop
-  one onto any empty square instead of moving.
+  one onto any empty square instead of moving, except that you can't drop a
+  pawn into your opponent's starting rows (their back two ranks). A pawn
+  dropped one step from promotion turned out to be too strong.
 - There's no check or checkmate: you win by **capturing the King**. Nothing
   stops a King walking into check, though the UI warns you when it is attacked.
 
@@ -50,7 +52,7 @@ Changes from the original Jack version:
 | Starting position | Fixed: White has two knights, Black two bishops | Both sides R, R, Q, K, N, B, shuffled each game and mirrored |
 | Rooks/bishops/queens on the board edge | Could wrap around to the other side (index-arithmetic bug) | Fixed |
 | Pawn reaching the last rank | Stuck forever (listed as a limitation) | Promotes to Queen; reverts to a pawn if captured (crazyhouse rule) |
-| Dropping a pawn on the last rank | Allowed (a TODO in the source) | Not allowed |
+| Dropping pawns deep | Allowed anywhere (a TODO in the source to forbid the last rank) | Not into the opponent's starting rows (their back two ranks) |
 | Dropships | 12 fixed slots, picked with keys 1–9, 0, -, = | Grouped by piece type with a count, keys 1–5 |
 | Undo / save | None | Undo history, and the game persists across reloads |
 | AI | None (listed as a future extension) | A basic computer opponent |
