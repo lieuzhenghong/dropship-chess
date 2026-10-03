@@ -136,12 +136,20 @@ describe('captures and drops', () => {
     for (const m of bad) expect(isLegal(s, m as never)).toBe(false);
   });
 
-  it('pawns cannot be dropped on the last rank', () => {
+  it("pawns cannot be dropped into the opponent's starting rows", () => {
     const base = fromDiagram(['k.....', '......', '......', '......', '......', '.....K']);
-    const s = { ...base, hands: { ...base.hands, w: { ...base.hands.w, P: 1 } } };
-    const targets = dropTargets(s, 'P');
-    for (let c = 0; c < 6; c++) expect(targets).not.toContain(square(0, c));
-    expect(targets).toContain(square(5, 0));
+    const withPawn = (turn: 'w' | 'b') => ({
+      ...base,
+      turn,
+      hands: { w: { ...base.hands.w, P: 1 }, b: { ...base.hands.b, P: 1 } },
+    });
+    const rows = (turn: 'w' | 'b') =>
+      [...new Set(dropTargets(withPawn(turn), 'P').map((sq) => Math.floor(sq / 6)))].sort();
+    expect(rows('w')).toEqual([2, 3, 4, 5]); // not Black's rows 0–1
+    expect(rows('b')).toEqual([0, 1, 2, 3]); // not White's rows 4–5
+    // Other pieces can still be dropped anywhere empty.
+    const s = { ...base, hands: { ...base.hands, w: { ...base.hands.w, N: 1 } } };
+    expect(dropTargets(s, 'N')).toContain(square(1, 0));
   });
 
   it('capturing the King wins and ends the game', () => {

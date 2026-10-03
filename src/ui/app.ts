@@ -106,8 +106,6 @@ export function mountApp(
 ): void {
   let history: History = loadHistory(store) ?? [initialState(randomBackRank())];
   let selection: Selection = null;
-  let cursor = SQUARES - 3; // keyboard cursor starts on White's King
-  let showCursor = false;
   /** Which colour the computer plays, or null for two players. */
   let aiColour: Colour | null = (() => {
     const m = store.get(MODE_KEY);
@@ -215,7 +213,7 @@ export function mountApp(
     const clock = el('span', { className: 'clock' });
     section.append(el('div', { className: 'hand-head' }, title, clock));
     const list = el('div', { className: 'slots' });
-    HAND_KINDS.forEach((kind, i) => {
+    HAND_KINDS.forEach((kind) => {
       const count = el('span', { className: 'count' });
       const btn = el(
         'button',
@@ -225,7 +223,7 @@ export function mountApp(
       );
       btn.dataset.kind = kind;
       btn.dataset.colour = colour;
-      btn.title = `${NAMES[kind]} (key ${i + 1})`;
+      btn.title = NAMES[kind];
       slots.set(kind, { btn, count });
       list.append(btn);
     });
@@ -255,12 +253,10 @@ export function mountApp(
         stops you walking into check, so watch out.</li>
       <li>Pawns move one square, never two. A pawn that reaches the far rank becomes a
         Queen, and turns back into a pawn if it’s captured. No castling, no en passant.</li>
-      <li>Pawns can’t be dropped onto the far rank.</li>
+      <li>You can’t drop a pawn into your opponent’s starting rows.</li>
       <li>Tap <b>New</b> to play two players on one device, against the computer${
         SERVER_URL ? ', or online against a friend (3 minutes each, plus 2 seconds per move)' : ''}.</li>
     </ul>
-    <p class="keys">Keyboard: arrows move, Space selects, Esc cancels, 1–5 pick a dropship,
-      U undoes.</p>
     <form method="dialog"><button class="primary">Play</button></form>`;
 
   const confirmDialog = el('dialog', { className: 'sheet' });
@@ -269,8 +265,7 @@ export function mountApp(
     <p class="warn">The current game will be lost.</p>
     <form method="dialog" class="stack">
       <button value="pvp" class="primary">2 players, one device</button>
-      <button value="b" class="primary">vs computer: you’re White</button>
-      <button value="w" class="primary">vs computer: you’re Black</button>${
+      <button value="ai" class="primary">vs computer</button>${
         SERVER_URL ? '<button value="online" class="primary">Online: invite a friend</button>' : ''}
       <button value="cancel">Cancel</button>
     </form>`;
@@ -457,7 +452,6 @@ export function mountApp(
       cl.toggle('capture', t.has(sq) && !!p);
       cl.toggle('last', !!last && (last.to === sq || (last.type === 'move' && last.from === sq)));
       cl.toggle('check', !!p && p.kind === 'K' && checked.includes(p.colour));
-      cl.toggle('cursor', showCursor && cursor === sq);
       cl.toggle('movable', movable && p?.colour === s.turn);
       cell.setAttribute('aria-label', `${squareName(sq)}${
         p ? `, ${COLOUR_NAMES[p.colour].toLowerCase()} ${NAMES[p.kind]}` : ''
@@ -642,10 +636,7 @@ export function mountApp(
   boardEl.addEventListener('click', (e) => {
     const cell = (e.target as HTMLElement).closest<HTMLButtonElement>('.cell');
     if (!cell) return;
-    // Pointer clicks hide the keyboard cursor; keyboard "clicks" have detail 0.
-    showCursor = e.detail === 0;
-    cursor = Number(cell.dataset.sq);
-    activateSquare(cursor);
+    activateSquare(Number(cell.dataset.sq));
   });
   for (const colour of ['w', 'b'] as const) {
     hands[colour].section.addEventListener('click', (e) => {
@@ -683,45 +674,10 @@ export function mountApp(
     const v = confirmDialog.returnValue;
     if (v === 'online') startOnline(newGameId());
     else if (v === 'pvp') newGame(null);
-    else if (v === 'w' || v === 'b') newGame(v);
+    // The computer takes a random colour.
+    else if (v === 'ai') newGame(Math.random() < 0.5 ? 'w' : 'b');
   });
   helpDialog.addEventListener('close', () => store.set(SEEN_HELP_KEY, '1'));
-
-  // Keyboard controls, after the original's (arrows / space / escape / numbers).
-  document.addEventListener('keydown', (e) => {
-    if (helpDialog.open || confirmDialog.open || e.metaKey || e.ctrlKey || e.altKey) return;
-    const move = (dr: number, dc: number) => {
-      if (boardEl.classList.contains('flipped')) [dr, dc] = [-dr, -dc];
-      const r = (row(cursor) + dr + SIZE) % SIZE;
-      const c = (col(cursor) + dc + SIZE) % SIZE;
-      cursor = r * SIZE + c;
-      showCursor = true;
-      cells[cursor].focus({ preventScroll: true });
-      render();
-    };
-    switch (e.key) {
-      case 'ArrowUp': move(-1, 0); break;
-      case 'ArrowDown': move(1, 0); break;
-      case 'ArrowLeft': move(0, -1); break;
-      case 'ArrowRight': move(0, 1); break;
-      case ' ':
-      case 'Enter':
-        // A focused button (a board cell after arrow keys, or Undo etc.) gets
-        // its native click instead, which avoids activating twice.
-        if (document.activeElement instanceof HTMLButtonElement) return;
-        showCursor = true;
-        activateSquare(cursor);
-        break;
-      case 'Escape': selection = null; render(); break;
-      case 'u': case 'U': undo(); break;
-      default: {
-        const i = Number(e.key) - 1;
-        if (i >= 0 && i < HAND_KINDS.length) activateHand(current().turn, HAND_KINDS[i]);
-        else return;
-      }
-    }
-    e.preventDefault();
-  });
 
   const linkedGame = new URLSearchParams(location.search).get('game');
   if (SERVER_URL && linkedGame && GAME_ID.test(linkedGame)) startOnline(linkedGame);

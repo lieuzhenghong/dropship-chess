@@ -7,8 +7,7 @@ and a bishop, with the back rank shuffled every game (Fischer random style).
 
 Two players on one device, against a rudimentary computer opponent, or online
 against a friend with a 3+2 clock.
-Touch-first, and it also works with a keyboard. The
-pieces are the original 32×32 1-bit sprites, extracted from `SpriteSheet.jack`.
+Touch-first. The pieces are the original 32×32 1-bit sprites, extracted from `SpriteSheet.jack`.
 
 ## Running
 
@@ -39,7 +38,9 @@ serves.
 - Moves are standard chess, except that pawns only ever step one square.
   There's no castling and no en passant.
 - Capturing a piece adds it to your **dropships**. On your turn, you can drop
-  one onto any empty square instead of moving.
+  one onto any empty square instead of moving, except that you can't drop a
+  pawn into your opponent's starting rows (their back two ranks). A pawn
+  dropped one step from promotion turned out to be too strong.
 - There's no check or checkmate: you win by **capturing the King**. Nothing
   stops a King walking into check, though the UI warns you when it is attacked.
 
@@ -50,14 +51,15 @@ Changes from the original Jack version:
 | Starting position | Fixed: White has two knights, Black two bishops | Both sides R, R, Q, K, N, B, shuffled each game and mirrored |
 | Rooks/bishops/queens on the board edge | Could wrap around to the other side (index-arithmetic bug) | Fixed |
 | Pawn reaching the last rank | Stuck forever (listed as a limitation) | Promotes to Queen; reverts to a pawn if captured (crazyhouse rule) |
-| Dropping a pawn on the last rank | Allowed (a TODO in the source) | Not allowed |
-| Dropships | 12 fixed slots, picked with keys 1–9, 0, -, = | Grouped by piece type with a count, keys 1–5 |
+| Dropping pawns deep | Allowed anywhere (a TODO in the source to forbid the last rank) | Not into the opponent's starting rows (their back two ranks) |
+| Dropships | 12 fixed slots, picked with keys 1–9, 0, -, = | Grouped by piece type with a count |
+| Controls | Arrow keys, Space, Escape | Touch (tap to select, tap to move) |
 | Undo / save | None | Undo history, and the game persists across reloads |
 | AI | None (listed as a future extension) | A basic computer opponent |
 
 ## Computer opponent
 
-Choose "vs computer" under **New**. It's meant as something to test against,
+Choose "vs computer" under **New**; you get a random colour. It's meant as something to test against,
 not a strong player: `src/engine/ai.ts` runs a three-ply negamax search with
 alpha-beta pruning (its move, your reply, its next move) and scores positions
 by material only, counting pieces in hand. It takes free pieces, captures the
@@ -117,10 +119,9 @@ The online option appears only once this is set.
 
 ## Controls
 
-- **Touch/mouse:** tap a piece, then tap a highlighted square. To drop, tap a
-  piece in your dropships, then an empty square.
-- **Keyboard:** arrow keys move the cursor, Space/Enter selects, Esc cancels,
-  1–5 pick a dropship (P, N, B, R, Q), U undoes.
+Tap a piece, then tap a highlighted square. To drop, tap a piece in your
+dropships, then an empty square. (Squares and buttons are ordinary buttons, so
+Tab and Enter work too.)
 
 ## Layout
 

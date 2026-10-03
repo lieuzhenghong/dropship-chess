@@ -20,7 +20,9 @@
 //   - Pawns reaching the last rank promote to a Queen (the original listed
 //     "no pawn promotion" as a limitation, which left pawns stuck forever).
 //     As in crazyhouse, a promoted piece turns back into a pawn when captured.
-//   - Pawns can't be dropped on the last rank (a TODO in the original).
+//   - Pawns can't be dropped into the opponent's starting rows, i.e. their
+//     back two ranks (the original had a TODO to forbid the last rank). A
+//     pawn dropped one step from promotion proved too strong in play.
 //
 // Squares are indexed 0..35, row-major, with index 0 at the top-left (Black's
 // back rank, as in the original). White moves "up" (decreasing row).
@@ -105,6 +107,8 @@ export function initialState(backRank: readonly Kind[] = DEFAULT_BACK_RANK): Gam
 const forward = (c: Colour): number => (c === 'w' ? -1 : 1);
 /** The row on which a colour's pawns promote. */
 export const lastRank = (c: Colour): number => (c === 'w' ? 0 : SIZE - 1);
+/** Whether a pawn of `c` may be dropped on `r`: not into the opponent's starting rows. */
+const pawnDropAllowed = (c: Colour, r: number): boolean => (c === 'w' ? r >= 2 : r <= SIZE - 3);
 
 const KNIGHT: readonly [number, number][] = [
   [-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1],
@@ -187,7 +191,7 @@ export function dropTargets(state: GameState, kind: HandKind): number[] {
   const out: number[] = [];
   for (let sq = 0; sq < SQUARES; sq++) {
     if (state.board[sq]) continue;
-    if (kind === 'P' && row(sq) === lastRank(state.turn)) continue;
+    if (kind === 'P' && !pawnDropAllowed(state.turn, row(sq))) continue;
     out.push(sq);
   }
   return out;
