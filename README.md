@@ -14,7 +14,9 @@ Touch-first. The pieces are the original 32×32 1-bit sprites, extracted from `S
 ```sh
 npm install
 npm run dev        # dev server (also reachable from a phone on the same network)
-npm test           # rules engine tests
+npm test           # unit tests (rules, AI, server logic)
+npm run e2e        # browser tests: builds the app, starts a local game server,
+                   # and plays local, vs-computer and online games in Chromium
 npm run build      # typecheck + static build into dist/
 npm run preview    # serve dist/
 ```
@@ -45,6 +47,12 @@ serves.
   stops a King walking into check, though the UI warns you when it is attacked.
 - If it's your turn and you have no legal move or drop, you lose. This is very
   rare, but without the rule such a game would just get stuck.
+- **No repetition:** a move may not recreate a position that has already
+  happened (same board, same hands, same side to move). This is the "superko"
+  rule from Go. Games always make progress, and together with the previous rule
+  there are no draws. Repeating moves simply aren't highlighted. The computer
+  respects the rule for the moves it plays, but ignores it inside its search
+  for speed.
 
 Changes from the original Jack version:
 
@@ -57,6 +65,7 @@ Changes from the original Jack version:
 | Dropships | 12 fixed slots, picked with keys 1–9, 0, -, = | Grouped by piece type with a count |
 | Controls | Arrow keys, Space, Escape | Touch (tap to select, tap to move) |
 | No legal moves | Game gets stuck | The side with no legal move loses |
+| Repetition | Allowed (games can cycle forever) | Not allowed: a move can't recreate an earlier position |
 | Undo / save | None | Undo history, and the game persists across reloads |
 | AI | None (listed as a future extension) | A basic computer opponent |
 
@@ -98,7 +107,9 @@ plays Black. The time control is 3+2: 3 minutes each, plus 2 seconds per move.
 As on most chess sites, each side's first move is untimed but must be made
 within 30 seconds, or the game is aborted with no result; the clocks start
 after Black's first move. A clock reaching zero loses, as does losing your
-King. Reloading or losing your connection rejoins the same game: each browser
+King. You can **resign** during the game, and afterwards both players can tap
+**Rematch** to play again in the same room, with colours swapped and a new
+shuffled start. Reloading or losing your connection rejoins the same game: each browser
 keeps a secret per-game token in `localStorage`, pruned to the 20 most recent
 games. Anyone else who opens the link can watch.
 
@@ -113,8 +124,8 @@ Games are kept indefinitely, as a record for replays or stats later; at a few
 KB each, storage isn't a concern. The
 game logic is in `server/src/room.ts`, with unit tests.
 
-Deliberately left out: accounts, matchmaking, rematch and resign buttons,
-chat, lag compensation, server-side timers, and a configurable time control (it's two constants
+Deliberately left out: accounts, matchmaking, chat, lag compensation,
+server-side timers, and a configurable time control (it's two constants
 in `src/protocol.ts`).
 
 ```sh
@@ -163,6 +174,7 @@ src/
   sprites/render.ts     sprite → transparent PNG (background removed by flood fill)
   storage.ts            KeyValueStore interface + localStorage implementation
   ui/app.ts, styles.css DOM UI
+e2e/game.e2e.ts         Playwright browser tests (config: playwright.config.ts)
 wrangler.toml           Worker config (entry point: server/src/index.ts)
 server/
   src/room.ts           authoritative game + clock logic (pure, tested)

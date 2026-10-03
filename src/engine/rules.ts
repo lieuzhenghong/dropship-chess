@@ -10,6 +10,11 @@
 //   - No check/checkmate: you win by capturing the opponent's King, and
 //     nothing stops a King walking into check. (Added here: a player with no
 //     legal move loses, so a game can't get stuck.)
+//   - No repetition (superko, as in Go): a move may not recreate any earlier
+//     position (board, both hands and side to move), so games always make
+//     progress and can't be drawn by repetition. Callers pass the positions
+//     seen so far (`seen`, see positionKey); without it, repetition is ignored,
+//     which the AI's search relies on for speed.
 //   - Drops go onto any empty square and use your turn.
 // Changes from the original:
 //   - Starting position: the original gave White two knights and Black two
@@ -188,24 +193,52 @@ export function pieceTargets(board: GameState['board'], from: number): number[] 
   return out;
 }
 
+/** Positions that have occurred in a game, as positionKey strings. */
+export type Seen = ReadonlySet<string>;
+
+const KEY_CHARS: Record<Kind, string> = { P: 'p', N: 'n', B: 'b', R: 'r', Q: 'q', K: 'k' };
+
+/** A compact identifier for a position: board, both hands and side to move. */
+export function positionKey(state: GameState): string {
+  let key = '';
+  for (const p of state.board) {
+    if (!p) key += '.';
+    else {
+      const ch = p.promoted ? 'z' : KEY_CHARS[p.kind]; // a promoted queen captures as a pawn
+      key += p.colour === 'w' ? ch.toUpperCase() : ch;
+    }
+  }
+  for (const c of ['w', 'b'] as const) for (const k of HAND_KINDS) key += state.hands[c][k];
+  return key + state.turn;
+}
+
+/** True if playing `move` would recreate a position in `seen`. Capturing the King always ends the game, so it never counts. */
+function repeats(state: GameState, move: Move, seen: Seen | undefined): boolean {
+  if (!seen) return false;
+  const next = play(state, move);
+  return !next.winner && seen.has(positionKey(next));
+}
+
 /** Empty squares the side to move may drop a piece of `kind` onto. */
-export function dropTargets(state: GameState, kind: HandKind): number[] {
+export function dropTargets(state: GameState, kind: HandKind, seen?: Seen): number[] {
   if (state.winner || !(state.hands[state.turn][kind] > 0)) return [];
   const out: number[] = [];
   for (let sq = 0; sq < SQUARES; sq++) {
     if (state.board[sq]) continue;
     if (kind === 'P' && !pawnDropAllowed(state.turn, row(sq))) continue;
+    if (repeats(state, { type: 'drop', kind, to: sq }, seen)) continue;
     out.push(sq);
   }
   return out;
 }
 
 /** Legal destination squares for the side to move's piece on `from`. */
-export function moveTargets(state: GameState, from: number): number[] {
+export function moveTargets(state: GameState, from: number, seen?: Seen): number[] {
   if (state.winner) return [];
   const piece = state.board[from];
   if (!piece || piece.colour !== state.turn) return [];
-  return pieceTargets(state.board, from);
+  const targets = pieceTargets(state.board, from);
+  return seen ? targets.filter((to) => !repeats(state, { type: 'move', from, to }, seen)) : targets;
 }
 
 const isSquare = (x: unknown): x is number =>
@@ -220,16 +253,29 @@ export function isMoveShape(m: unknown): m is Move {
   return false;
 }
 
-export function isLegal(state: GameState, move: Move): boolean {
+export function isLegal(state: GameState, move: Move, seen?: Seen): boolean {
   if (!isMoveShape(move)) return false;
   const targets =
-    move.type === 'move' ? moveTargets(state, move.from) : dropTargets(state, move.kind);
+    move.type === 'move' ? moveTargets(state, move.from, seen) : dropTargets(state, move.kind, seen);
   return targets.includes(move.to);
 }
 
-/** Returns the new state. Throws on an illegal move. */
-export function applyMove(state: GameState, move: Move): GameState {
-  if (!isLegal(state, move)) throw new Error(`illegal move: ${JSON.stringify(move)}`);
+/**
+ * Returns the new state. Throws on an illegal move. `seen` must include the
+ * current position; it's used both to reject repetitions and to decide
+ * whether the next player has any legal move left.
+ */
+export function applyMove(state: GameState, move: Move, seen?: Seen): GameState {
+  if (!isLegal(state, move, seen)) throw new Error(`illegal move: ${JSON.stringify(move)}`);
+  const next = play(state, move);
+  if (next.winner) return next;
+  const seenNext = seen && new Set([...seen, positionKey(next)]);
+  // A player who can't move loses.
+  return hasLegalMove(next, seenNext) ? next : { ...next, turn: state.turn, winner: state.turn, winBy: 'stuck' };
+}
+
+/** Plays a move without checking it or whether the next player can move. */
+function play(state: GameState, move: Move): GameState {
   const board = state.board.slice();
   const mover = state.turn;
   const hands = { w: { ...state.hands.w }, b: { ...state.hands.b } };
@@ -256,23 +302,23 @@ export function applyMove(state: GameState, move: Move): GameState {
   }
 
   if (winner) return { board, hands, turn: mover, winner, winBy: 'king', lastMove: move };
-  const next: GameState = { board, hands, turn: other(mover), winner: null, lastMove: move };
-  // A player who can't move loses.
-  return hasLegalMove(next) ? next : { ...next, turn: mover, winner: mover, winBy: 'stuck' };
+  return { board, hands, turn: other(mover), winner: null, lastMove: move };
 }
 
 /**
  * Whether the side to move has any legal move. Stops at the first one found,
  * since this runs after every move (including inside the AI's search).
  */
-export function hasLegalMove(state: GameState): boolean {
+export function hasLegalMove(state: GameState, seen?: Seen): boolean {
   for (let sq = 0; sq < SQUARES; sq++) {
     const p = state.board[sq];
-    if (p?.colour === state.turn && pieceTargets(state.board, sq).length > 0) return true;
+    if (p?.colour !== state.turn) continue;
+    const targets = pieceTargets(state.board, sq);
+    if (targets.some((to) => !repeats(state, { type: 'move', from: sq, to }, seen))) return true;
   }
   // No piece can move; a drop is the only way out. dropTargets works here
   // because the game isn't over yet.
-  return HAND_KINDS.some((kind) => dropTargets(state, kind).length > 0);
+  return HAND_KINDS.some((kind) => dropTargets(state, kind, seen).length > 0);
 }
 
 /** True if `colour`'s King could be captured on the opponent's next move. */
@@ -287,14 +333,14 @@ export function inCheck(state: GameState, colour: Colour): boolean {
 }
 
 /** Every legal move for the side to move: board moves, then drops. */
-export function allMoves(state: GameState): Move[] {
+export function allMoves(state: GameState, seen?: Seen): Move[] {
   if (state.winner) return [];
   const moves: Move[] = [];
   for (let from = 0; from < SQUARES; from++) {
-    for (const to of moveTargets(state, from)) moves.push({ type: 'move', from, to });
+    for (const to of moveTargets(state, from, seen)) moves.push({ type: 'move', from, to });
   }
   for (const kind of HAND_KINDS) {
-    for (const to of dropTargets(state, kind)) moves.push({ type: 'drop', kind, to });
+    for (const to of dropTargets(state, kind, seen)) moves.push({ type: 'drop', kind, to });
   }
   return moves;
 }

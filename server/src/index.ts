@@ -8,7 +8,6 @@
 // message arrives.
 
 import { DurableObject } from 'cloudflare:workers';
-import type { Colour } from '../../src/engine/rules';
 import type { ClientMessage, ServerMessage } from '../../src/protocol';
 import {
   checkTimeouts,
@@ -17,8 +16,11 @@ import {
   join,
   move,
   newRoom,
+  rematch,
+  resign,
   type Room,
   runningClock,
+  seatOf,
   upgradeRoom,
 } from './room';
 
@@ -26,8 +28,13 @@ interface Env {
   GAME: DurableObjectNamespace<Game>;
 }
 
+/**
+ * Per-socket state that survives hibernation. Storing the player's token
+ * rather than their colour means seats follow the room when a rematch swaps
+ * colours.
+ */
 interface Attachment {
-  seat: Colour | null;
+  token: string | null;
 }
 
 const GAME_PATH = /^\/game\/([a-z0-9]{6,32})$/;
@@ -47,7 +54,7 @@ export class Game extends DurableObject<Env> {
   async fetch(): Promise<Response> {
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ seat: null } satisfies Attachment);
+    server.serializeAttachment({ token: null } satisfies Attachment);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -61,20 +68,24 @@ export class Game extends DurableObject<Env> {
     const now = Date.now();
     const before = await this.load();
     let room = checkTimeouts(before, now);
-    const { seat } = ws.deserializeAttachment() as Attachment;
+    const seat = seatOf(room, this.tokenOf(ws));
 
     switch (msg.t) {
       case 'join': {
         if (typeof msg.token !== 'string' || msg.token.length < 8) {
           return this.send(ws, { t: 'error', message: 'Bad token.' });
         }
-        const joined = join(room, msg.token, now);
-        room = joined.room;
-        ws.serializeAttachment({ seat: joined.seat } satisfies Attachment);
+        room = join(room, msg.token, now).room;
+        ws.serializeAttachment({ token: msg.token } satisfies Attachment);
         break;
       }
-      case 'move': {
-        const out = move(room, seat, msg.move, now);
+      case 'move':
+      case 'resign':
+      case 'rematch': {
+        const out =
+          msg.t === 'move' ? move(room, seat, msg.move, now)
+          : msg.t === 'resign' ? resign(room, seat, now)
+          : rematch(room, seat, now);
         room = out.room;
         if (out.error) this.send(ws, { t: 'error', message: out.error });
         break;
@@ -100,6 +111,10 @@ export class Game extends DurableObject<Env> {
     if (stored) this.broadcast(upgradeRoom(stored), Date.now(), ws);
   }
 
+  private tokenOf(ws: WebSocket): string | null {
+    return (ws.deserializeAttachment() as Partial<Attachment> | null)?.token ?? null;
+  }
+
   private async load(): Promise<Room> {
     const stored = await this.ctx.storage.get<Room>('room');
     return stored ? upgradeRoom(stored) : newRoom();
@@ -115,7 +130,7 @@ export class Game extends DurableObject<Env> {
 
   private broadcast(room: Room, now: number, closing?: WebSocket): void {
     const sockets = this.ctx.getWebSockets().filter((s) => s !== closing);
-    const seats = sockets.map((s) => (s.deserializeAttachment() as Attachment).seat);
+    const seats = sockets.map((s) => seatOf(room, this.tokenOf(s)));
     const connected = { w: seats.includes('w'), b: seats.includes('b') };
     const clocks = clocksAt(room, now);
     const abortIn = room.abortAt !== null && !room.result ? Math.max(0, room.abortAt - now) : null;
@@ -130,6 +145,8 @@ export class Game extends DurableObject<Env> {
         abortIn,
         connected,
         result: room.result,
+        seen: room.positions,
+        rematch: { w: !!room.rematch.w, b: !!room.rematch.b },
       }),
     );
   }

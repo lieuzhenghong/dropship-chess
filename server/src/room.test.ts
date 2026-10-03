@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { square } from '../../src/engine/rules';
+import { initialState, positionKey, square } from '../../src/engine/rules';
 import { FIRST_MOVE_MS, INCREMENT_MS, INITIAL_CLOCK_MS } from '../../src/protocol';
 import {
   checkTimeouts,
@@ -7,8 +7,11 @@ import {
   join,
   move,
   newRoom,
+  rematch,
+  resign,
   type Room,
   runningClock,
+  seatOf,
   upgradeRoom,
 } from './room';
 
@@ -127,6 +130,51 @@ describe('no legal moves', () => {
       { type: 'move', from: square(0, 5), to: square(0, 4) }, 3000).room;
     expect(s.result).toEqual({ winner: 'w', reason: 'stuck' });
     expect(runningClock(s)).toBeNull();
+  });
+});
+
+describe('no repetition', () => {
+  it('rejects a move that recreates an earlier position', () => {
+    // A clocking room reset to the fixed default start (knights on b1/b6).
+    const start = initialState();
+    let r: Room = { ...clocking(), game: start, positions: [positionKey(start)] };
+    const mv = (fr: number, fc: number, tr: number, tc: number) =>
+      ({ type: 'move', from: square(fr, fc), to: square(tr, tc) }) as const;
+    r = move(r, 'w', mv(5, 1, 3, 2), 3000).room; // Nb1-c3
+    r = move(r, 'b', mv(0, 1, 2, 2), 4000).room; // Nb6-c4
+    r = move(r, 'w', mv(3, 2, 5, 1), 5000).room; // Nc3-b1
+    expect(r.positions).toHaveLength(4);
+    expect(r.positions.at(-1)).toBe(positionKey(r.game));
+    // Nc4-b6 would recreate the starting position.
+    expect(move(r, 'b', mv(2, 2, 0, 1), 6000).error).toMatch(/Illegal/);
+  });
+});
+
+describe('resign and rematch', () => {
+  it('resigning loses for the resigner and stops the clocks', () => {
+    const { room, error } = resign(clocking(), 'b', 5000);
+    expect(error).toBeUndefined();
+    expect(room.result).toEqual({ winner: 'w', reason: 'resign' });
+    expect(runningClock(room)).toBeNull();
+    expect(resign(room, 'w', 6000).error).toMatch(/over/);
+    expect(resign(joined(0), null, 1).error).toBeDefined();
+  });
+
+  it('a rematch needs both players, then swaps colours and starts fresh', () => {
+    const over = resign(clocking(), 'b', 5000).room;
+    expect(rematch(clocking(), 'w', 5000).error).toMatch(/still going/);
+    const asked = rematch(over, 'w', 6000).room;
+    expect(asked.rematch).toEqual({ w: true });
+    expect(asked.result).not.toBeNull();
+    expect(rematch(asked, null, 6000).error).toBeDefined();
+    const fresh = rematch(asked, 'b', 7000).room;
+    expect(fresh.result).toBeNull();
+    expect(fresh.plies).toBe(0);
+    expect(fresh.rematch).toEqual({});
+    expect(seatOf(fresh, 'alice')).toBe('b');
+    expect(seatOf(fresh, 'bob')).toBe('w');
+    expect(fresh.abortAt).toBe(7000 + FIRST_MOVE_MS);
+    expect(fresh.positions).toEqual([positionKey(fresh.game)]);
   });
 });
 
