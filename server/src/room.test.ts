@@ -7,8 +7,11 @@ import {
   join,
   move,
   newRoom,
+  rematch,
+  resign,
   type Room,
   runningClock,
+  seatOf,
   upgradeRoom,
 } from './room';
 
@@ -112,6 +115,48 @@ describe('move', () => {
       { type: 'move', from: square(2, 3), to: square(0, 3) }, 3000).room;
     expect(s.result).toEqual({ winner: 'w', reason: 'king' });
     expect(runningClock(s)).toBeNull();
+  });
+});
+
+describe('no legal moves', () => {
+  it('ends the game with reason "stuck"', () => {
+    const r = clocking();
+    // Black walled in by its own pieces; White's king move leaves Black stuck.
+    const rows = ['.....K', '......', 'pp....', 'kp....', 'pppppp', 'rrrrrr'];
+    const board = rows.flatMap((line) => [...line].map((ch) =>
+      ch === '.' ? null : { colour: ch === ch.toUpperCase() ? 'w' : 'b', kind: ch.toUpperCase() },
+    )) as (typeof r.game.board)[number][];
+    const s = move({ ...r, game: { ...r.game, board, turn: 'w' } }, 'w',
+      { type: 'move', from: square(0, 5), to: square(0, 4) }, 3000).room;
+    expect(s.result).toEqual({ winner: 'w', reason: 'stuck' });
+    expect(runningClock(s)).toBeNull();
+  });
+});
+
+describe('resign and rematch', () => {
+  it('resigning loses for the resigner and stops the clocks', () => {
+    const { room, error } = resign(clocking(), 'b', 5000);
+    expect(error).toBeUndefined();
+    expect(room.result).toEqual({ winner: 'w', reason: 'resign' });
+    expect(runningClock(room)).toBeNull();
+    expect(resign(room, 'w', 6000).error).toMatch(/over/);
+    expect(resign(joined(0), null, 1).error).toBeDefined();
+  });
+
+  it('a rematch needs both players, then swaps colours and starts fresh', () => {
+    const over = resign(clocking(), 'b', 5000).room;
+    expect(rematch(clocking(), 'w', 5000).error).toMatch(/still going/);
+    const asked = rematch(over, 'w', 6000).room;
+    expect(asked.rematch).toEqual({ w: true });
+    expect(asked.result).not.toBeNull();
+    expect(rematch(asked, null, 6000).error).toBeDefined();
+    const fresh = rematch(asked, 'b', 7000).room;
+    expect(fresh.result).toBeNull();
+    expect(fresh.plies).toBe(0);
+    expect(fresh.rematch).toEqual({});
+    expect(seatOf(fresh, 'alice')).toBe('b');
+    expect(seatOf(fresh, 'bob')).toBe('w');
+    expect(fresh.abortAt).toBe(7000 + FIRST_MOVE_MS);
   });
 });
 

@@ -3,8 +3,9 @@
 //
 // Sounds are synthesised with Web Audio (square waves and noise, in keeping
 // with the 1-bit look), so there are no audio files to load. Vibration uses
-// navigator.vibrate, which works on Android browsers and does nothing on iOS,
-// where Safari doesn't implement it.
+// navigator.vibrate, which only Chromium-based browsers implement (Chrome,
+// Samsung Internet, Edge...). It does nothing in Safari/iOS and, since
+// version 129, in Firefox; real haptics there need the native app wrapper.
 
 import type { KeyValueStore } from './storage';
 

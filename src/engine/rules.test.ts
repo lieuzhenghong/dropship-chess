@@ -4,6 +4,7 @@ import {
   dropTargets,
   type GameState,
   inCheck,
+  hasLegalMove,
   initialState,
   isLegal,
   randomBackRank,
@@ -163,6 +164,39 @@ describe('captures and drops', () => {
   it('allows moving into check (no check rule, as in the original)', () => {
     const s = fromDiagram(['....r.', '......', '......', '......', '......', '...K..']);
     expect(moveTargets(s, square(5, 3))).toContain(square(5, 4));
+  });
+});
+
+describe('no legal moves', () => {
+  // Black is completely walled in by its own pieces; nothing can move or drop.
+  const walled = () =>
+    fromDiagram(['.....K', '......', 'pp....', 'kp....', 'pppppp', 'rrrrrr'], 'w');
+
+  it('hasLegalMove spots a side that is stuck', () => {
+    expect(hasLegalMove(initialState())).toBe(true);
+    expect(hasLegalMove({ ...walled(), turn: 'b' })).toBe(false);
+  });
+
+  it('a move that leaves the opponent with no legal move wins', () => {
+    const s = applyMove(walled(), { type: 'move', from: square(0, 5), to: square(0, 4) });
+    expect(s.winner).toBe('w');
+    expect(s.winBy).toBe('stuck');
+  });
+
+  it('a piece in hand is a way out', () => {
+    const base = walled();
+    const s = applyMove(
+      { ...base, hands: { ...base.hands, b: { ...base.hands.b, N: 1 } } },
+      { type: 'move', from: square(0, 5), to: square(0, 4) },
+    );
+    expect(s.winner).toBeNull();
+    expect(s.turn).toBe('b');
+  });
+
+  it('king captures are recorded as such', () => {
+    let s = fromDiagram(['....k.', '......', '......', '......', '......', 'K...R.']);
+    s = applyMove(s, { type: 'move', from: square(5, 4), to: square(0, 4) });
+    expect(s.winBy).toBe('king');
   });
 });
 

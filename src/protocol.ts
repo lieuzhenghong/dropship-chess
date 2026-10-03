@@ -22,12 +22,16 @@ export type ClientMessage =
    * or missed the first-move deadline. The server has no timers of its own:
    * it checks deadlines whenever a message arrives.
    */
-  | { t: 'flag' };
+  | { t: 'flag' }
+  | { t: 'resign' }
+  /** After a game ends: asks for (or accepts) a rematch with colours swapped. */
+  | { t: 'rematch' };
 
 export interface GameResult {
   /** Null when the game was aborted. */
   readonly winner: Colour | null;
-  readonly reason: 'king' | 'time' | 'aborted';
+  /** 'stuck': the loser had no legal move. */
+  readonly reason: 'king' | 'time' | 'stuck' | 'resign' | 'aborted';
 }
 
 export interface RoomView {
@@ -48,6 +52,8 @@ export interface RoomView {
   /** Which players currently have a live connection. */
   readonly connected: Readonly<Record<Colour, boolean>>;
   readonly result: GameResult | null;
+  /** Which players have asked for a rematch since the game ended. */
+  readonly rematch: Readonly<Record<Colour, boolean>>;
 }
 
 export type ServerMessage =

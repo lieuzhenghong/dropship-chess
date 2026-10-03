@@ -38,19 +38,23 @@ export interface Room {
   /** Deadline for the side to move's untimed first move; null otherwise. */
   readonly abortAt: number | null;
   readonly result: GameResult | null;
+  /** Players who've asked for a rematch since the game ended. */
+  readonly rematch: Readonly<Partial<Record<Colour, boolean>>>;
 }
 
 export type Outcome = { room: Room; error?: string };
 
 export function newRoom(): Room {
+  const game = initialState(randomBackRank());
   return {
     tokens: {},
-    game: initialState(randomBackRank()),
+    game,
     plies: 0,
     clocks: { w: INITIAL_CLOCK_MS, b: INITIAL_CLOCK_MS },
     turnStart: null,
     abortAt: null,
     result: null,
+    rematch: {},
   };
 }
 
@@ -128,7 +132,9 @@ export function move(room: Room, seat: Colour | null, mv: Move, now: number): Ou
   const timed = room.turnStart !== null;
   const clocks = clocksAt(room, now);
   if (timed) clocks[seat] += INCREMENT_MS;
-  const result: GameResult | null = game.winner ? { winner: game.winner, reason: 'king' } : null;
+  const result: GameResult | null = game.winner
+    ? { winner: game.winner, reason: game.winBy ?? 'king' }
+    : null;
   return {
     room: {
       ...room,
@@ -143,3 +149,41 @@ export function move(room: Room, seat: Colour | null, mv: Move, now: number): Ou
     },
   };
 }
+
+export function resign(room: Room, seat: Colour | null, now: number): Outcome {
+  room = checkTimeouts(room, now);
+  if (room.result) return { room, error: 'The game is over.' };
+  if (!seat || !isStarted(room)) return { room, error: 'Nothing to resign.' };
+  return {
+    room: {
+      ...room,
+      clocks: clocksAt(room, now),
+      turnStart: null,
+      abortAt: null,
+      result: { winner: other(seat), reason: 'resign' },
+    },
+  };
+}
+
+/**
+ * Records a rematch request. Once both players have asked, starts a new game
+ * in the same room with colours swapped and a fresh shuffled start.
+ */
+export function rematch(room: Room, seat: Colour | null, now: number): Outcome {
+  if (!room.result) return { room, error: 'The game is still going.' };
+  if (!seat) return { room, error: 'Only players can ask for a rematch.' };
+  const asked = { ...room.rematch, [seat]: true };
+  if (!asked.w || !asked.b) return { room: { ...room, rematch: asked } };
+  const fresh = newRoom();
+  return {
+    room: {
+      ...fresh,
+      tokens: { w: room.tokens.b, b: room.tokens.w },
+      abortAt: now + FIRST_MOVE_MS,
+    },
+  };
+}
+
+/** The colour a token plays, or null for a spectator. */
+export const seatOf = (room: Room, token: string | null): Colour | null =>
+  !token ? null : room.tokens.w === token ? 'w' : room.tokens.b === token ? 'b' : null;

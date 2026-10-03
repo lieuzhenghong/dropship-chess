@@ -58,7 +58,7 @@ const DUST = ['#3d4a3c', '#8fa27c', '#e3dcbc'];
 const SPARKS = ['#d99a2b', '#f4efda', '#c4513b', '#263024'];
 const CONFETTI = ['#d99a2b', '#8fa27c', '#3d4a3c', '#c4513b', '#f4efda'];
 
-const positionKey = (s: GameState) => JSON.stringify([s.board, s.hands, s.turn, s.winner]);
+const snapshotKey = (s: GameState) => JSON.stringify([s.board, s.hands, s.turn, s.winner]);
 
 interface Transition {
   move: Move;
@@ -82,7 +82,7 @@ function transition(prev: GameState, next: GameState): Transition | null {
   } catch {
     return null;
   }
-  if (positionKey(expected) !== positionKey(next)) return null;
+  if (snapshotKey(expected) !== snapshotKey(next)) return null;
   const captured = move.type === 'move' ? prev.board[move.to] : null;
   const promoted = move.type === 'move' && prev.board[move.from]?.kind === 'P' &&
     next.board[move.to]?.kind === 'Q';
@@ -153,7 +153,7 @@ export function mountApp(
   const result = (): GameResult | null => {
     if (online) return online.view?.result ?? null;
     const w = current().winner;
-    return w ? { winner: w, reason: 'king' } : null;
+    return w ? { winner: w, reason: current().winBy ?? 'king' } : null;
   };
   /** The colour the person at this device plays, or null when both sides share it. */
   const me = (): Colour | null =>
@@ -240,6 +240,10 @@ export function mountApp(
   const abortEl = el('span', { className: 'abort' });
   const shareBtn = el('button', { className: 'icon-btn share', type: 'button', textContent: 'Share invite link' });
   shareBtn.hidden = true;
+  // Online-only game controls, shown under the status line.
+  const resignBtn = el('button', { className: 'icon-btn share', type: 'button', textContent: 'Resign' });
+  const rematchBtn = el('button', { className: 'icon-btn share', type: 'button' });
+  resignBtn.hidden = rematchBtn.hidden = true;
 
   const helpDialog = el('dialog', { className: 'sheet' });
   helpDialog.innerHTML = `
@@ -257,6 +261,7 @@ export function mountApp(
       <li>Pawns move one square, never two. A pawn that reaches the far rank becomes a
         Queen, and turns back into a pawn if it’s captured. No castling, no en passant.</li>
       <li>You can’t drop a pawn into your opponent’s starting rows.</li>
+      <li>If you have no legal move on your turn, you lose.</li>
       <li>Tap <b>New</b> to play two players on one device, against the computer${
         SERVER_URL ? ', or online against a friend (3 minutes each, plus 2 seconds per move)' : ''}.</li>
     </ul>
@@ -277,7 +282,7 @@ export function mountApp(
   const gameEl = el('main', { className: 'game' }, hands.b.section, boardEl, hands.w.section);
   root.replaceChildren(
     header,
-    el('div', { className: 'stage' }, gameEl, status, shareBtn),
+    el('div', { className: 'stage' }, gameEl, status, shareBtn, resignBtn, rematchBtn),
     helpDialog,
     confirmDialog,
   );
@@ -390,7 +395,11 @@ export function mountApp(
         onState(view, receivedAt) {
           if (!online) return;
           const prev = online.view;
-          if (prev && !prev.started && view.started && !view.result) feedback.play('start');
+          // Opponent joined, or a rematch began.
+          if (prev && !view.result && ((!prev.started && view.started) || prev.result)) {
+            feedback.play('start');
+            selection = null;
+          }
           online.view = view;
           online.receivedAt = receivedAt;
           online.flagClaimed = false;
@@ -492,9 +501,20 @@ export function mountApp(
     renderClocks();
     const score = res?.winner === 'w' ? '1–0' : '0–1';
     shareBtn.hidden = true;
+    resignBtn.hidden = !(online && you && view?.started && !res);
+    rematchBtn.hidden = !(online && you && res);
+    if (online && you && view && res) {
+      // `rematch` is missing if an older server is still deployed.
+      const mine = !!view.rematch?.[you];
+      const theirs = !!view.rematch?.[other(you)];
+      rematchBtn.textContent = mine ? 'Rematch requested…' : theirs ? 'Accept rematch' : 'Rematch';
+      rematchBtn.disabled = mine;
+    }
     if (online) {
       const opp = you ? other(you) : null;
-      const how = res?.reason === 'time' ? 'on time' : 'by capturing the King';
+      const how = res?.reason === 'time' ? 'on time'
+        : res?.reason === 'resign' ? 'by resignation'
+        : res?.reason === 'stuck' ? '(no legal moves left)' : 'by capturing the King';
       const turn = onlineTurn(view);
       if (!view) {
         status.textContent = 'Connecting…';
@@ -520,9 +540,11 @@ export function mountApp(
       }
       if (online.status !== 'open' && view) status.append(' · reconnecting…');
     } else if (s.winner && aiColour !== null) {
-      status.textContent = `${s.winner === aiColour ? 'Computer wins' : 'You win'}, ${score}`;
+      status.textContent = `${s.winner === aiColour ? 'Computer wins' : 'You win'}${
+        s.winBy === 'stuck' ? ' (no legal moves left)' : ''}, ${score}`;
     } else if (s.winner) {
-      status.textContent = `${COLOUR_NAMES[s.winner]} wins, ${score}`;
+      status.textContent = `${COLOUR_NAMES[s.winner]} wins${
+        s.winBy === 'stuck' ? `: ${COLOUR_NAMES[other(s.winner)]} has no legal moves` : ''}, ${score}`;
     } else if (aiToMove()) {
       status.textContent = 'Computer is thinking…';
     } else {
@@ -654,6 +676,10 @@ export function mountApp(
     if (feedback.enabled) feedback.play('select');
   });
   helpBtn.addEventListener('click', () => helpDialog.showModal());
+  resignBtn.addEventListener('click', () => {
+    if (online && window.confirm('Resign this game?')) online.conn.resign();
+  });
+  rematchBtn.addEventListener('click', () => online?.conn.rematch());
   shareBtn.addEventListener('click', async () => {
     const url = location.href;
     try {

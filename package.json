@@ -12,10 +12,12 @@
     "sprites": "node scripts/extract-sprites.mjs",
     "server:dev": "wrangler dev",
     "server:deploy": "wrangler deploy",
-    "ai:match": "esbuild scripts/ai-match.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.cache/ai-match.mjs && node node_modules/.cache/ai-match.mjs"
+    "ai:match": "esbuild scripts/ai-match.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.cache/ai-match.mjs && node node_modules/.cache/ai-match.mjs",
+    "e2e": "playwright test"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261003.1",
+    "@playwright/test": "^1.63.0",
     "esbuild": "^0.28.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.2",

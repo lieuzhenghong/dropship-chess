@@ -14,7 +14,9 @@ Touch-first. The pieces are the original 32×32 1-bit sprites, extracted from `S
 ```sh
 npm install
 npm run dev        # dev server (also reachable from a phone on the same network)
-npm test           # rules engine tests
+npm test           # unit tests (rules, AI, server logic)
+npm run e2e        # browser tests: builds the app, starts a local game server,
+                   # and plays local, vs-computer and online games in Chromium
 npm run build      # typecheck + static build into dist/
 npm run preview    # serve dist/
 ```
@@ -43,6 +45,10 @@ serves.
   dropped one step from promotion turned out to be too strong.
 - There's no check or checkmate: you win by **capturing the King**. Nothing
   stops a King walking into check, though the UI warns you when it is attacked.
+- If it's your turn and you have no legal move or drop, you lose. This is very
+  rare, but without the rule such a game would just get stuck.
+- Positions may repeat, so in principle a game can cycle forever. There's no
+  draw rule; in practice, someone deviates or resigns.
 
 Changes from the original Jack version:
 
@@ -54,6 +60,7 @@ Changes from the original Jack version:
 | Dropping pawns deep | Allowed anywhere (a TODO in the source to forbid the last rank) | Not into the opponent's starting rows (their back two ranks) |
 | Dropships | 12 fixed slots, picked with keys 1–9, 0, -, = | Grouped by piece type with a count |
 | Controls | Arrow keys, Space, Escape | Touch (tap to select, tap to move) |
+| No legal moves | Game gets stuck | The side with no legal move loses |
 | Undo / save | None | Undo history, and the game persists across reloads |
 | AI | None (listed as a future extension) | A basic computer opponent |
 
@@ -95,7 +102,9 @@ plays Black. The time control is 3+2: 3 minutes each, plus 2 seconds per move.
 As on most chess sites, each side's first move is untimed but must be made
 within 30 seconds, or the game is aborted with no result; the clocks start
 after Black's first move. A clock reaching zero loses, as does losing your
-King. Reloading or losing your connection rejoins the same game: each browser
+King. You can **resign** during the game, and afterwards both players can tap
+**Rematch** to play again in the same room, with colours swapped and a new
+shuffled start. Reloading or losing your connection rejoins the same game: each browser
 keeps a secret per-game token in `localStorage`, pruned to the 20 most recent
 games. Anyone else who opens the link can watch.
 
@@ -110,8 +119,8 @@ Games are kept indefinitely, as a record for replays or stats later; at a few
 KB each, storage isn't a concern. The
 game logic is in `server/src/room.ts`, with unit tests.
 
-Deliberately left out: accounts, matchmaking, rematch and resign buttons,
-chat, lag compensation, server-side timers, and a configurable time control (it's two constants
+Deliberately left out: accounts, matchmaking, chat, lag compensation,
+server-side timers, and a configurable time control (it's two constants
 in `src/protocol.ts`).
 
 ```sh
@@ -142,6 +151,12 @@ Tap a piece, then tap a highlighted square. To drop, tap a piece in your
 dropships, then an empty square. (Squares and buttons are ordinary buttons, so
 Tab and Enter work too.)
 
+Moves play short synthesised sounds, and the speaker button mutes them. On
+Chromium-based browsers (Chrome, Samsung Internet, Edge) the phone also
+vibrates, with a stronger buzz when your opponent or the computer moves. Safari
+and Firefox (since version 129) don't support web vibration at all, so there
+it's sound only until the game is wrapped as a native app.
+
 ## Layout
 
 ```
@@ -154,6 +169,7 @@ src/
   sprites/render.ts     sprite → transparent PNG (background removed by flood fill)
   storage.ts            KeyValueStore interface + localStorage implementation
   ui/app.ts, styles.css DOM UI
+e2e/game.e2e.ts         Playwright browser tests (config: playwright.config.ts)
 wrangler.toml           Worker config (entry point: server/src/index.ts)
 server/
   src/room.ts           authoritative game + clock logic (pure, tested)

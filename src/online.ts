@@ -13,6 +13,8 @@ export type ConnectionStatus = 'connecting' | 'open' | 'closed';
 export interface OnlineGame {
   sendMove(move: Move): void;
   claimFlag(): void;
+  resign(): void;
+  rematch(): void;
   close(): void;
 }
 
@@ -108,6 +110,8 @@ export function connect(gameId: string, store: KeyValueStore, handlers: OnlineHa
   return {
     sendMove: (move) => send({ t: 'move', move }),
     claimFlag: () => send({ t: 'flag' }),
+    resign: () => send({ t: 'resign' }),
+    rematch: () => send({ t: 'rematch' }),
     close() {
       closedByUs = true;
       clearTimeout(retryTimer);
