@@ -1,6 +1,6 @@
 name: CI and Pages
 
-# Tests and builds every PR and push. Pushes to master also:
+# Tests, builds and browser-tests every PR and push. Pushes to master also:
 #   - publish dist/ to the gh-pages branch, which GitHub Pages serves
 #     (Settings → Pages → "Deploy from a branch", gh-pages / root);
 #   - deploy the game server (server/) to Cloudflare, if the
@@ -41,8 +41,27 @@ jobs:
           name: dist
           path: dist
 
+  e2e:
+    # Browser tests (Playwright) against a production build and a local game
+    # server, covering local play, the computer opponent and online play.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: test-results
+
   deploy:
-    needs: build
+    needs: [build, e2e]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
