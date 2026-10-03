@@ -5,6 +5,7 @@ import {
   type GameState,
   inCheck,
   initialState,
+  isLegal,
   moveTargets,
   type Piece,
   SQUARES,
@@ -105,6 +106,20 @@ describe('captures and drops', () => {
     const withHand = { ...s, hands: { ...s.hands, w: { ...s.hands.w, N: 1 } } };
     expect(dropTargets(withHand, 'N')).not.toContain(square(4, 0));
     expect(() => applyMove(withHand, { type: 'drop', kind: 'N', to: square(4, 0) })).toThrow();
+  });
+
+  it('rejects malformed moves, including dropping a King', () => {
+    const s = initialState();
+    const bad = [
+      { type: 'drop', kind: 'K', to: square(2, 0) },
+      { type: 'drop', kind: 'X', to: square(2, 0) },
+      { type: 'move', from: -1, to: 0 },
+      { type: 'move', from: square(4, 0), to: 36 },
+      { type: 'move', from: '28', to: '22' },
+      null,
+      'e2e3',
+    ];
+    for (const m of bad) expect(isLegal(s, m as never)).toBe(false);
   });
 
   it('pawns cannot be dropped on the last rank', () => {

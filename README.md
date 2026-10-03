@@ -5,7 +5,8 @@ chess on a 6×6 board where captured pieces switch sides and can be "dropped"
 back onto any empty square. White starts with knights and Black with bishops,
 so you have to capture the other side's minor pieces to get them.
 
-Two players on one device, or against a rudimentary computer opponent.
+Two players on one device, against a rudimentary computer opponent, or online
+against a friend with a 3-minute clock.
 Touch-first, and it also works with a keyboard. The
 pieces are the original 32×32 1-bit sprites, extracted from `SpriteSheet.jack`.
 
@@ -59,6 +60,41 @@ random. It runs on the main thread, taking a few milliseconds per move on a
 laptop, so no worker is needed yet. Against the computer, Undo takes back your
 last move together with its reply.
 
+## Online play
+
+Choose **New → Online: invite a friend** and send the link. Whoever opens it
+plays Black; the clocks (3 minutes each, no increment) start once both players
+are connected. A clock reaching zero loses, as does losing your King. Reloading
+or losing your connection rejoins the same game: each browser keeps a secret
+per-game token in `localStorage`. Anyone else who opens the link can watch.
+
+The server (`server/`) is a Cloudflare Worker with one
+[Durable Object](https://developers.cloudflare.com/durable-objects/) per game.
+It validates every move with the same rules engine, `src/engine/rules.ts`, and
+keeps the clocks. It never runs a timer: when a player's clock shows 0:00, the
+opponent's app asks the server to check, and the server confirms against its own
+timestamps. The game logic is in `server/src/room.ts`, with unit tests.
+
+Deliberately left out: accounts, matchmaking, rematch and resign buttons,
+chat, lag compensation, and a configurable time control.
+
+```sh
+npm run server:dev                                  # local server on :8787
+VITE_SERVER_URL=ws://localhost:8787 npm run dev     # client pointing at it
+```
+
+To deploy:
+
+1. Create a Cloudflare account. Durable Objects (SQLite-backed) are
+   available on the free plan.
+2. Either run `npx wrangler login && npm run server:deploy` once, or add
+   repository secrets `CLOUDFLARE_API_TOKEN` (with the "Edit Cloudflare Workers"
+   template) and `CLOUDFLARE_ACCOUNT_ID`. CI then deploys the server on every
+   push to `master`.
+3. Set the repository variable `SERVER_URL` to the deployed address, e.g.
+   `wss://dropship-chess.<your-subdomain>.workers.dev`, and re-run the
+   workflow. The online option appears only once this is set.
+
 ## Controls
 
 - **Touch/mouse:** tap a piece, then tap a highlighted square. To drop, tap a
@@ -72,10 +108,15 @@ last move together with its reply.
 src/
   engine/rules.ts       pure, immutable rules engine (no DOM), plus tests
   engine/ai.ts          computer opponent (negamax + alpha-beta, material eval)
+  protocol.ts           client/server message types
+  online.ts             WebSocket client with auto-reconnect
   sprites/data.ts       generated from SpriteSheet.jack
   sprites/render.ts     sprite → transparent PNG (background removed by flood fill)
   storage.ts            KeyValueStore interface + localStorage implementation
   ui/app.ts, styles.css DOM UI
+server/
+  src/room.ts           authoritative game + clock logic (pure, tested)
+  src/index.ts          Worker entry + Durable Object (one per game)
 scripts/
   extract-sprites.mjs   node scripts/extract-sprites.mjs path/to/SpriteSheet.jack
   make-icons.mjs        regenerates public/icon*.{svg,png}

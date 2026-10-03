@@ -160,7 +160,7 @@ export function pieceTargets(board: GameState['board'], from: number): number[] 
 
 /** Empty squares the side to move may drop a piece of `kind` onto. */
 export function dropTargets(state: GameState, kind: HandKind): number[] {
-  if (state.winner || state.hands[state.turn][kind] <= 0) return [];
+  if (state.winner || !(state.hands[state.turn][kind] > 0)) return [];
   const out: number[] = [];
   for (let sq = 0; sq < SQUARES; sq++) {
     if (state.board[sq]) continue;
@@ -178,7 +178,20 @@ export function moveTargets(state: GameState, from: number): number[] {
   return pieceTargets(state.board, from);
 }
 
+const isSquare = (x: unknown): x is number =>
+  Number.isInteger(x) && (x as number) >= 0 && (x as number) < SQUARES;
+
+/** Checks that untrusted input (e.g. from the network) is a well-formed Move. */
+export function isMoveShape(m: unknown): m is Move {
+  if (!m || typeof m !== 'object') return false;
+  const o = m as Record<string, unknown>;
+  if (o.type === 'move') return isSquare(o.from) && isSquare(o.to);
+  if (o.type === 'drop') return HAND_KINDS.includes(o.kind as HandKind) && isSquare(o.to);
+  return false;
+}
+
 export function isLegal(state: GameState, move: Move): boolean {
+  if (!isMoveShape(move)) return false;
   const targets =
     move.type === 'move' ? moveTargets(state, move.from) : dropTargets(state, move.kind);
   return targets.includes(move.to);

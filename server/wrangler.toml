@@ -1,0 +1,12 @@
+name = "dropship-chess"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+[[durable_objects.bindings]]
+name = "GAME"
+class_name = "Game"
+
+# SQLite-backed Durable Objects are the kind available on the free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Game"]

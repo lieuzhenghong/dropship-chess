@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["@cloudflare/workers-types"]
+  },
+  "include": ["src", "../src/engine", "../src/protocol.ts"],
+  "exclude": ["src/**/*.test.ts", "../src/**/*.test.ts"]
+}

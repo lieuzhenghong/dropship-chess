@@ -11,11 +11,14 @@ import {
   type Kind,
   type Move,
   moveTargets,
+  other,
   row,
   SIZE,
   SQUARES,
 } from '../engine/rules';
 import { chooseMove } from '../engine/ai';
+import { connect, type ConnectionStatus, newGameId, type OnlineGame, SERVER_URL } from '../online';
+import type { GameResult, RoomView } from '../protocol';
 import { type Palette, spriteUrl } from '../sprites/render';
 import { type History, type KeyValueStore, loadHistory, saveHistory } from '../storage';
 
@@ -32,6 +35,16 @@ const NAMES: Record<Kind, string> = {
 const COLOUR_NAMES: Record<Colour, string> = { w: 'White', b: 'Black' };
 
 type Selection = { type: 'square'; sq: number } | { type: 'hand'; kind: HandKind } | null;
+
+const GAME_ID = /^[a-z0-9]{6,32}$/;
+
+/** m:ss, with tenths in the last ten seconds. */
+function formatClock(ms: number): string {
+  const t = Math.max(0, ms);
+  if (t < 10_000) return `0:0${(t / 1000).toFixed(1)}`;
+  const s = Math.ceil(t / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
 
 const isDark = (sq: number) => (row(sq) + col(sq)) % 2 === 1;
 const squareName = (sq: number) => `${'abcdef'[col(sq)]}${SIZE - row(sq)}`;
@@ -58,8 +71,40 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
   })();
   let aiTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const current = () => history[history.length - 1];
-  const aiToMove = () => aiColour !== null && current().turn === aiColour && !current().winner;
+  /** Set while playing online; the server's snapshot replaces local history. */
+  let online: {
+    id: string;
+    conn: OnlineGame;
+    view: RoomView | null;
+    /** Local time `view` arrived, for counting down the running clock. */
+    receivedAt: number;
+    status: ConnectionStatus;
+    flagClaimed: boolean;
+  } | null = null;
+
+  const current = (): GameState =>
+    online ? (online.view?.game ?? initialState()) : history[history.length - 1];
+  const aiToMove = () =>
+    !online && aiColour !== null && current().turn === aiColour && !current().winner;
+  /** Whether the person at this device may move now. */
+  const canAct = (): boolean => {
+    if (!online) return !current().winner && !aiToMove();
+    const v = online.view;
+    return !!v && v.you !== null && v.running === v.you && online.status === 'open';
+  };
+  const result = (): GameResult | null => {
+    if (online) return online.view?.result ?? null;
+    const w = current().winner;
+    return w ? { winner: w, reason: 'king' } : null;
+  };
+  /** Clocks as they stand now, counting down the running side locally. */
+  const liveClocks = (): Record<Colour, number> | null => {
+    const v = online?.view;
+    if (!v) return null;
+    const clocks = { ...v.clocks };
+    if (v.running) clocks[v.running] -= Date.now() - online!.receivedAt;
+    return clocks;
+  };
 
   // ---- DOM ----
   const undoBtn = el('button', { className: 'icon-btn', textContent: 'Undo', type: 'button' });
@@ -95,7 +140,8 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
     const slots = new Map<HandKind, { btn: HTMLButtonElement; count: HTMLSpanElement }>();
     const section = el('section', { className: `hand hand-${colour}` });
     const title = el('h2');
-    section.append(title);
+    const clock = el('span', { className: 'clock' });
+    section.append(el('div', { className: 'hand-head' }, title, clock));
     const list = el('div', { className: 'slots' });
     HAND_KINDS.forEach((kind, i) => {
       const count = el('span', { className: 'count' });
@@ -112,12 +158,14 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       list.append(btn);
     });
     section.append(list);
-    return { section, slots, title };
+    return { section, slots, title, clock };
   };
   const hands = { b: makeHand('b'), w: makeHand('w') };
 
   const status = el('p', { className: 'status' });
   status.setAttribute('role', 'status');
+  const shareBtn = el('button', { className: 'icon-btn share', type: 'button', textContent: 'Share invite link' });
+  shareBtn.hidden = true;
 
   const helpDialog = el('dialog', { className: 'sheet' });
   helpDialog.innerHTML = `
@@ -134,7 +182,8 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       <li>Pawns move one square, never two. A pawn that reaches the far rank becomes a
         Queen, and turns back into a pawn if it’s captured. No castling, no en passant.</li>
       <li>Pawns can’t be dropped onto the far rank.</li>
-      <li>Tap <b>New</b> to play two players on one device, or against the computer.</li>
+      <li>Tap <b>New</b> to play two players on one device, against the computer${
+        SERVER_URL ? ', or online against a friend (3 minutes each)' : ''}.</li>
     </ul>
     <p class="keys">Keyboard: arrows move, Space selects, Esc cancels, 1–5 pick a dropship,
       U undoes.</p>
@@ -147,19 +196,16 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
     <form method="dialog" class="stack">
       <button value="pvp" class="primary">2 players, one device</button>
       <button value="b" class="primary">vs computer: you’re White</button>
-      <button value="w" class="primary">vs computer: you’re Black</button>
+      <button value="w" class="primary">vs computer: you’re Black</button>${
+        SERVER_URL ? '<button value="online" class="primary">Online: invite a friend</button>' : ''}
       <button value="cancel">Cancel</button>
     </form>`;
   const warn = confirmDialog.querySelector<HTMLElement>('.warn')!;
 
+  const gameEl = el('main', { className: 'game' }, hands.b.section, boardEl, hands.w.section);
   root.replaceChildren(
     header,
-    el(
-      'div',
-      { className: 'stage' },
-      el('main', { className: 'game' }, hands.b.section, boardEl, hands.w.section),
-      status,
-    ),
+    el('div', { className: 'stage' }, gameEl, status, shareBtn),
     helpDialog,
     confirmDialog,
   );
@@ -181,13 +227,27 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
 
   const activateSquare = (sq: number) => {
     const s = current();
-    if (s.winner || aiToMove()) return;
+    if (!canAct()) return;
     if (selection && targets().includes(sq)) {
       const move: Move =
         selection.type === 'square'
           ? { type: 'move', from: selection.sq, to: sq }
           : { type: 'drop', kind: selection.kind, to: sq };
-      commit(applyMove(s, move));
+      if (online?.view) {
+        // Show the move straight away; the server's next snapshot is authoritative.
+        const next = applyMove(s, move);
+        online.view = {
+          ...online.view,
+          game: next,
+          clocks: liveClocks()!,
+          running: next.winner ? null : next.turn,
+        };
+        online.receivedAt = Date.now();
+        online.conn.sendMove(move);
+        selection = null;
+      } else {
+        commit(applyMove(s, move));
+      }
     } else if (s.board[sq]?.colour === s.turn &&
                !(selection?.type === 'square' && selection.sq === sq)) {
       selection = { type: 'square', sq };
@@ -199,7 +259,7 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
 
   const activateHand = (colour: Colour, kind: HandKind) => {
     const s = current();
-    if (s.winner || aiToMove() || colour !== s.turn || s.hands[colour][kind] <= 0) return;
+    if (!canAct() || colour !== s.turn || s.hands[colour][kind] <= 0) return;
     selection =
       selection?.type === 'hand' && selection.kind === kind ? null : { type: 'hand', kind };
     render();
@@ -216,7 +276,53 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
     render();
   };
 
+  const leaveOnline = () => {
+    if (!online) return;
+    online.conn.close();
+    online = null;
+    const url = new URL(location.href);
+    url.searchParams.delete('game');
+    window.history.replaceState(null, '', url);
+  };
+
+  const startOnline = (id: string) => {
+    leaveOnline();
+    clearTimeout(aiTimer);
+    selection = null;
+    const url = new URL(location.href);
+    url.searchParams.set('game', id);
+    window.history.replaceState(null, '', url);
+    online = {
+      id,
+      view: null,
+      receivedAt: 0,
+      status: 'connecting',
+      flagClaimed: false,
+      conn: connect(id, store, {
+        onState(view, receivedAt) {
+          if (!online) return;
+          online.view = view;
+          online.receivedAt = receivedAt;
+          online.flagClaimed = false;
+          // Drop a selection the new position no longer supports.
+          if (!canAct()) selection = null;
+          render();
+        },
+        onStatus(st) {
+          if (!online) return;
+          online.status = st;
+          render();
+        },
+        onError(message) {
+          console.warn('server:', message);
+        },
+      }),
+    };
+    render();
+  };
+
   const newGame = (ai: Colour | null) => {
+    leaveOnline();
     clearTimeout(aiTimer);
     aiColour = ai;
     store.set(MODE_KEY, ai ?? 'pvp');
@@ -261,12 +367,23 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       }${t.has(sq) ? ', legal move' : ''}`);
     });
 
+    const view = online?.view ?? null;
+    const you = view?.you ?? null;
+    const res = result();
+    const flipped = you === 'b';
+    boardEl.classList.toggle('flipped', flipped);
+    gameEl.classList.toggle('flipped', flipped);
+
     (['w', 'b'] as const).forEach((colour) => {
       const { section, slots, title } = hands[colour];
-      section.classList.toggle('active', !s.winner && s.turn === colour);
-      title.textContent =
-        aiColour === null ? `${COLOUR_NAMES[colour]}’s dropships`
-        : colour === aiColour ? 'Computer’s dropships' : 'Your dropships';
+      section.classList.toggle('active', online ? view?.running === colour : !res && s.turn === colour);
+      if (online && you) {
+        title.textContent = colour === you ? 'Your dropships' : 'Opponent’s dropships';
+      } else {
+        title.textContent =
+          aiColour === null || online ? `${COLOUR_NAMES[colour]}’s dropships`
+          : colour === aiColour ? 'Computer’s dropships' : 'Your dropships';
+      }
       for (const [kind, { btn, count }] of slots) {
         const n = s.hands[colour][kind];
         count.textContent = n > 1 ? `×${n}` : '';
@@ -278,8 +395,30 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       }
     });
 
-    const score = s.winner === 'w' ? '1–0' : '0–1';
-    if (s.winner && aiColour !== null) {
+    renderClocks();
+    const score = res?.winner === 'w' ? '1–0' : '0–1';
+    shareBtn.hidden = true;
+    if (online) {
+      const opp = you ? other(you) : null;
+      const how = res?.reason === 'time' ? 'on time' : 'by capturing the King';
+      if (!view) {
+        status.textContent = 'Connecting…';
+      } else if (res) {
+        status.textContent = you
+          ? `${res.winner === you ? 'You win' : 'You lose'} ${how}, ${score}`
+          : `${COLOUR_NAMES[res.winner]} wins ${how}, ${score}`;
+      } else if (!view.running) {
+        status.textContent = 'Waiting for your opponent to open the link…';
+        shareBtn.hidden = you !== 'w';
+      } else if (!you) {
+        status.textContent = `Watching · ${COLOUR_NAMES[s.turn]} to move`;
+      } else {
+        status.textContent = `${view.running === you ? 'Your move' : 'Opponent’s move'}${
+          view.running === you && checked.includes(you) ? ' · your King is under attack' : ''
+        }${opp && !view.connected[opp] ? ' · opponent offline' : ''}`;
+      }
+      if (online.status !== 'open' && view) status.textContent += ' · reconnecting…';
+    } else if (s.winner && aiColour !== null) {
       status.textContent = `${s.winner === aiColour ? 'Computer wins' : 'You win'}, ${score}`;
     } else if (s.winner) {
       status.textContent = `${COLOUR_NAMES[s.winner]} wins, ${score}`;
@@ -290,12 +429,33 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
         checked.includes(s.turn) ? ' · your King is under attack' : ''
       }`;
     }
-    status.classList.toggle('over', !!s.winner);
+    status.classList.toggle('over', !!res);
     // With the computer as White, undoing its opening move would just replay it.
-    undoBtn.disabled = history.length <= (aiColour === 'w' ? 2 : 1);
+    undoBtn.disabled = !!online || history.length <= (aiColour === 'w' ? 2 : 1);
     document.body.dataset.turn = s.turn;
     maybePlayAi();
   }
+
+  /** Updates the clock readouts; also asks the server to call a flag we can see. */
+  function renderClocks() {
+    const clocks = liveClocks();
+    const running = online?.view?.running ?? null;
+    for (const colour of ['w', 'b'] as const) {
+      const { clock } = hands[colour];
+      clock.hidden = !clocks;
+      if (!clocks) continue;
+      clock.textContent = formatClock(clocks[colour]);
+      clock.classList.toggle('running', running === colour);
+      clock.classList.toggle('low', clocks[colour] < 20_000);
+    }
+    if (online && clocks && running && clocks[running] <= 0 && !online.flagClaimed) {
+      online.flagClaimed = true;
+      online.conn.claimFlag();
+    }
+  }
+  setInterval(() => {
+    if (online?.view?.running) renderClocks();
+  }, 100);
 
   // ---- Input ----
   boardEl.addEventListener('click', (e) => {
@@ -314,14 +474,29 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
   }
   undoBtn.addEventListener('click', undo);
   helpBtn.addEventListener('click', () => helpDialog.showModal());
+  shareBtn.addEventListener('click', async () => {
+    const url = location.href;
+    try {
+      if (navigator.share) await navigator.share({ title: 'Dropship Chess', text: 'Play me at Dropship Chess', url });
+      else {
+        await navigator.clipboard.writeText(url);
+        shareBtn.textContent = 'Link copied';
+        setTimeout(() => (shareBtn.textContent = 'Share invite link'), 2000);
+      }
+    } catch {
+      // Share sheet dismissed, or clipboard blocked: the link is still in the address bar.
+    }
+  });
   newBtn.addEventListener('click', () => {
-    warn.hidden = history.length <= 1 || !!current().winner;
+    warn.textContent = online ? 'You’ll leave this online game.' : 'The current game will be lost.';
+    warn.hidden = online ? !!result() : history.length <= 1 || !!current().winner;
     confirmDialog.returnValue = '';
     confirmDialog.showModal();
   });
   confirmDialog.addEventListener('close', () => {
     const v = confirmDialog.returnValue;
-    if (v === 'pvp') newGame(null);
+    if (v === 'online') startOnline(newGameId());
+    else if (v === 'pvp') newGame(null);
     else if (v === 'w' || v === 'b') newGame(v);
   });
   helpDialog.addEventListener('close', () => store.set(SEEN_HELP_KEY, '1'));
@@ -330,6 +505,7 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
   document.addEventListener('keydown', (e) => {
     if (helpDialog.open || confirmDialog.open || e.metaKey || e.ctrlKey || e.altKey) return;
     const move = (dr: number, dc: number) => {
+      if (boardEl.classList.contains('flipped')) [dr, dc] = [-dr, -dc];
       const r = (row(cursor) + dr + SIZE) % SIZE;
       const c = (col(cursor) + dc + SIZE) % SIZE;
       cursor = r * SIZE + c;
@@ -361,6 +537,8 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
     e.preventDefault();
   });
 
-  render();
+  const linkedGame = new URLSearchParams(location.search).get('game');
+  if (SERVER_URL && linkedGame && GAME_ID.test(linkedGame)) startOnline(linkedGame);
+  else render();
   if (!store.get(SEEN_HELP_KEY)) helpDialog.showModal();
 }
