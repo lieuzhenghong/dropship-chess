@@ -59,7 +59,7 @@ Changes from the original Jack version:
 
 ## Computer opponent
 
-Choose "vs computer" under **New**. It's meant as something to test against,
+Choose "vs computer" under **New**; you get a random colour. It's meant as something to test against,
 not a strong player: `src/engine/ai.ts` runs a three-ply negamax search with
 alpha-beta pruning (its move, your reply, its next move) and scores positions
 by material only, counting pieces in hand. It takes free pieces, captures the

@@ -265,8 +265,7 @@ export function mountApp(
     <p class="warn">The current game will be lost.</p>
     <form method="dialog" class="stack">
       <button value="pvp" class="primary">2 players, one device</button>
-      <button value="b" class="primary">vs computer: you’re White</button>
-      <button value="w" class="primary">vs computer: you’re Black</button>${
+      <button value="ai" class="primary">vs computer</button>${
         SERVER_URL ? '<button value="online" class="primary">Online: invite a friend</button>' : ''}
       <button value="cancel">Cancel</button>
     </form>`;
@@ -675,7 +674,8 @@ export function mountApp(
     const v = confirmDialog.returnValue;
     if (v === 'online') startOnline(newGameId());
     else if (v === 'pvp') newGame(null);
-    else if (v === 'w' || v === 'b') newGame(v);
+    // The computer takes a random colour.
+    else if (v === 'ai') newGame(Math.random() < 0.5 ? 'w' : 'b');
   });
   helpDialog.addEventListener('close', () => store.set(SEEN_HELP_KEY, '1'));
 
