@@ -7,10 +7,9 @@
 
 import { applyMove, type Colour, type GameState, initialState, isLegal, type Move, other } from '../../src/engine/rules';
 import {
-  FINISHED_GAME_TTL_MS,
+  ABANDONED_GAME_TTL_MS,
   FIRST_MOVE_MS,
   type GameResult,
-  IDLE_GAME_TTL_MS,
   INCREMENT_MS,
   INITIAL_CLOCK_MS,
 } from '../../src/protocol';
@@ -138,19 +137,28 @@ export function move(room: Room, seat: Colour | null, mv: Move, now: number): Ou
   };
 }
 
-/** When the room should be deleted. */
-export const expiresAt = (room: Room): number =>
-  room.updatedAt + (room.result ? FINISHED_GAME_TTL_MS : IDLE_GAME_TTL_MS);
+/**
+ * When the room should be deleted, or null to keep it. Only games that never
+ * got going are deleted: nobody joined, or it was aborted before both first
+ * moves. Games with real moves are kept as a record.
+ */
+export function expiresAt(room: Room): number | null {
+  const neverStarted = room.result ? room.result.reason === 'aborted' : room.plies === 0;
+  return neverStarted ? room.updatedAt + ABANDONED_GAME_TTL_MS : null;
+}
 
 /**
- * The next time the server must wake up for this room: the first-move
- * deadline, the side to move running out of time, or deletion.
+ * The next time the server must wake up for this room (the first-move
+ * deadline, the side to move running out of time, or deletion), or null if
+ * nothing is pending.
  */
-export function nextWake(room: Room): number {
-  const times = [expiresAt(room)];
+export function nextWake(room: Room): number | null {
+  const times: number[] = [];
+  const expiry = expiresAt(room);
+  if (expiry !== null) times.push(expiry);
   if (!room.result) {
     if (room.abortAt !== null) times.push(room.abortAt);
     if (room.turnStart !== null) times.push(room.turnStart + room.clocks[room.game.turn]);
   }
-  return Math.min(...times);
+  return times.length ? Math.min(...times) : null;
 }

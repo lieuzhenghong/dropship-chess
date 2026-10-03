@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { square } from '../../src/engine/rules';
 import {
-  FINISHED_GAME_TTL_MS,
+  ABANDONED_GAME_TTL_MS,
   FIRST_MOVE_MS,
-  IDLE_GAME_TTL_MS,
   INCREMENT_MS,
   INITIAL_CLOCK_MS,
 } from '../../src/protocol';
@@ -144,12 +143,24 @@ describe('nextWake and expiry', () => {
     expect(nextWake(c)).toBe(2000 + INITIAL_CLOCK_MS);
   });
 
-  it('expires idle games after 30 days and finished ones after 7', () => {
+  it('deletes games that never got going, a week after their last activity', () => {
     const lone = join(newRoom(), 'alice', 100).room;
-    expect(nextWake(lone)).toBe(100 + IDLE_GAME_TTL_MS);
-    const ended = checkTimeouts(joined(0), FIRST_MOVE_MS);
-    expect(expiresAt(ended)).toBe(FIRST_MOVE_MS + FINISHED_GAME_TTL_MS);
-    expect(nextWake(ended)).toBe(FIRST_MOVE_MS + FINISHED_GAME_TTL_MS);
+    expect(nextWake(lone)).toBe(100 + ABANDONED_GAME_TTL_MS);
+    const aborted = checkTimeouts(joined(0), FIRST_MOVE_MS);
+    expect(nextWake(aborted)).toBe(FIRST_MOVE_MS + ABANDONED_GAME_TTL_MS);
+    // Aborted after White's first move still never got going.
+    const half = checkTimeouts(move(joined(0), 'w', e2e3, 1000).room, 1000 + FIRST_MOVE_MS);
+    expect(half.result?.reason).toBe('aborted');
+    expect(expiresAt(half)).toBe(1000 + FIRST_MOVE_MS + ABANDONED_GAME_TTL_MS);
+  });
+
+  it('keeps games with real moves, finished or not', () => {
+    const c = clocking();
+    expect(expiresAt(c)).toBeNull();
+    const flagged = checkTimeouts(c, 2000 + INITIAL_CLOCK_MS);
+    expect(flagged.result?.reason).toBe('time');
+    expect(expiresAt(flagged)).toBeNull();
+    expect(nextWake(flagged)).toBeNull();
   });
 });
 

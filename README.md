@@ -76,9 +76,11 @@ The server (`server/`) is a Cloudflare Worker with one
 It validates every move with the same rules engine, `src/engine/rules.ts`, and
 keeps the clocks. A single Durable Object alarm wakes the game for whatever
 comes next: a first-move deadline, the side to move running out of time (so a
-game ends on time even if nobody's app is open), or deleting the game, which
-happens 7 days after it ends or 30 days after its last activity. Clients of a
-deleted game are disconnected with close code 4000 and told it has expired. The
+game ends on time even if nobody's app is open), or deleting a game that never
+got going (nobody joined, or aborted before both first moves) a week after its
+last activity. Clients of a deleted game are disconnected with close code 4000
+and told it has expired. Games with real moves are kept indefinitely, as a
+record for replays or stats later; at a few KB each, storage isn't a concern. The
 game logic is in `server/src/room.ts`, with unit tests.
 
 Deliberately left out: accounts, matchmaking, rematch and resign buttons,

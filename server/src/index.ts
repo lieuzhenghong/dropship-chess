@@ -5,7 +5,8 @@
 // The object stores a `Room` (see room.ts) and uses the WebSocket Hibernation
 // API, so it can be evicted from memory between moves without dropping the
 // players' connections. A single alarm wakes it for whatever comes next: a
-// first-move deadline, a clock running out, or deleting the game.
+// first-move deadline, a clock running out, or deleting a game that never got
+// going. Games with real moves are kept.
 
 import { DurableObject } from 'cloudflare:workers';
 import type { Colour } from '../../src/engine/rules';
@@ -108,7 +109,8 @@ export class Game extends DurableObject<Env> {
     if (!stored) return;
     const now = Date.now();
     const room = upgradeRoom(stored, now);
-    if (now >= expiresAt(room)) {
+    const expiry = expiresAt(room);
+    if (expiry !== null && now >= expiry) {
       for (const ws of this.ctx.getWebSockets()) {
         try {
           ws.close(CLOSE_GAME_EXPIRED, 'Game expired');
@@ -124,7 +126,7 @@ export class Game extends DurableObject<Env> {
       await this.save(next);
       this.broadcast(next, now);
     } else {
-      await this.ctx.storage.setAlarm(nextWake(room));
+      await this.schedule(room);
     }
   }
 
@@ -135,7 +137,13 @@ export class Game extends DurableObject<Env> {
 
   private async save(room: Room): Promise<void> {
     await this.ctx.storage.put('room', room);
-    await this.ctx.storage.setAlarm(nextWake(room));
+    await this.schedule(room);
+  }
+
+  private async schedule(room: Room): Promise<void> {
+    const wake = nextWake(room);
+    if (wake === null) await this.ctx.storage.deleteAlarm();
+    else await this.ctx.storage.setAlarm(wake);
   }
 
   private send(ws: WebSocket, msg: ServerMessage): void {

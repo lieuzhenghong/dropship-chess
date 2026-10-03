@@ -11,10 +11,12 @@ export const INCREMENT_MS = 2 * 1000;
  * game is aborted with no result.
  */
 export const FIRST_MOVE_MS = 30 * 1000;
-/** Finished games are deleted from the server this long after they end... */
-export const FINISHED_GAME_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-/** ...and any game this long after its last activity. */
-export const IDLE_GAME_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * Games that never got going (nobody joined, or aborted before both first
+ * moves) are deleted this long after their last activity. Games with real
+ * moves are kept indefinitely.
+ */
+export const ABANDONED_GAME_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** WebSocket close code the server uses when a game has been deleted. */
 export const CLOSE_GAME_EXPIRED = 4000;
 
