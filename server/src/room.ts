@@ -9,7 +9,16 @@
 // message arrives, and the waiting player's app sends one at the deadline. A
 // game both players have left stays unresolved until someone reopens it.
 
-import { applyMove, type Colour, type GameState, initialState, isLegal, type Move, other } from '../../src/engine/rules';
+import {
+  applyMove,
+  type Colour,
+  type GameState,
+  initialState,
+  isLegal,
+  type Move,
+  other,
+  randomBackRank,
+} from '../../src/engine/rules';
 import {
   FIRST_MOVE_MS,
   type GameResult,
@@ -36,7 +45,7 @@ export type Outcome = { room: Room; error?: string };
 export function newRoom(): Room {
   return {
     tokens: {},
-    game: initialState(),
+    game: initialState(randomBackRank()),
     plies: 0,
     clocks: { w: INITIAL_CLOCK_MS, b: INITIAL_CLOCK_MS },
     turnStart: null,

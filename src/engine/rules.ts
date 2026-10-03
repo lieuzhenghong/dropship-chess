@@ -5,13 +5,16 @@
 // "dropped" back onto any empty square by the capturer, using up their turn.
 //
 // Faithful to the original:
-//   - Starting position (White has knights, Black has bishops).
 //   - Pawns move one square forward, capture one square diagonally forward.
 //     No double step, no en passant. No castling.
 //   - No check/checkmate: you win by capturing the opponent's King, and
 //     nothing stops a King walking into check.
 //   - Drops go onto any empty square and use your turn.
 // Changes from the original:
+//   - Starting position: the original gave White two knights and Black two
+//     bishops. Here both sides get R, R, Q, K, N, B, with the back rank
+//     shuffled each game (Fischer random style) and Black's mirroring White's,
+//     so the only asymmetry is who moves first.
 //   - Sliding pieces no longer wrap around the board edges (a bug in the Jack
 //     version, which worked on raw square indices).
 //   - Pawns reaching the last rank promote to a Queen (the original listed
@@ -60,11 +63,31 @@ const onBoard = (r: number, c: number): boolean => r >= 0 && r < SIZE && c >= 0 
 
 const emptyHand = (): Hand => ({ P: 0, N: 0, B: 0, R: 0, Q: 0 });
 
-export function initialState(): GameState {
+/** A fixed back rank, used when none is given (e.g. in tests). */
+export const DEFAULT_BACK_RANK: readonly Kind[] = ['R', 'N', 'Q', 'K', 'B', 'R'];
+const BACK_RANK_PIECES: readonly Kind[] = ['R', 'R', 'Q', 'K', 'N', 'B'];
+
+/**
+ * A random arrangement of R, R, Q, K, N, B. With one bishop each and no
+ * castling, none of chess960's placement rules are needed: all 360 distinct
+ * arrangements are allowed.
+ */
+export function randomBackRank(rng: () => number = Math.random): Kind[] {
+  const rank = [...BACK_RANK_PIECES];
+  for (let i = rank.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [rank[i], rank[j]] = [rank[j], rank[i]];
+  }
+  return rank;
+}
+
+/** The starting position for `backRank` (files a–f), mirrored for Black. */
+export function initialState(backRank: readonly Kind[] = DEFAULT_BACK_RANK): GameState {
   const board: (Piece | null)[] = new Array(SQUARES).fill(null);
-  const back = (minor: Kind): Kind[] => ['R', minor, 'Q', 'K', minor, 'R'];
-  back('B').forEach((kind, c) => (board[square(0, c)] = { colour: 'b', kind }));
-  back('N').forEach((kind, c) => (board[square(5, c)] = { colour: 'w', kind }));
+  backRank.forEach((kind, c) => {
+    board[square(0, c)] = { colour: 'b', kind };
+    board[square(5, c)] = { colour: 'w', kind };
+  });
   for (let c = 0; c < SIZE; c++) {
     board[square(1, c)] = { colour: 'b', kind: 'P' };
     board[square(4, c)] = { colour: 'w', kind: 'P' };

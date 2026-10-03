@@ -8,6 +8,7 @@ import {
   type HandKind,
   inCheck,
   initialState,
+  randomBackRank,
   type Kind,
   type Move,
   moveTargets,
@@ -103,7 +104,7 @@ export function mountApp(
   store: KeyValueStore,
   feedback: Feedback = createWebFeedback(store),
 ): void {
-  let history: History = loadHistory(store) ?? [initialState()];
+  let history: History = loadHistory(store) ?? [initialState(randomBackRank())];
   let selection: Selection = null;
   let cursor = SQUARES - 3; // keyboard cursor starts on White's King
   let showCursor = false;
@@ -246,7 +247,8 @@ export function mountApp(
       <a href="https://github.com/lieuzhenghong/nand2tetris-dropship-chess"
          target="_blank" rel="noopener">@lieuzhenghong</a> for nand2tetris.</p>
     <ul>
-      <li>Chess on a 6×6 board. White starts with knights, Black with bishops.</li>
+      <li>Chess on a 6×6 board. Each side has two rooks, a queen, a king, a knight and a
+        bishop, shuffled every game. Black’s back rank mirrors White’s.</li>
       <li>Capture a piece and it joins your <b>dropships</b>. On your turn you may
         drop it onto any empty square instead of moving.</li>
       <li>Win by <b>capturing the King</b>. There’s no checkmate, and nothing
@@ -416,7 +418,7 @@ export function mountApp(
     clearTimeout(aiTimer);
     aiColour = ai;
     store.set(MODE_KEY, ai ?? 'pvp');
-    history = [initialState()];
+    history = [initialState(randomBackRank())];
     selection = null;
     saveHistory(store, history);
     render();

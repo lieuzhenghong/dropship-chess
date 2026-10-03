@@ -2,8 +2,8 @@
 
 A mobile-web port of [nand2tetris-dropship-chess](https://github.com/lieuzhenghong/nand2tetris-dropship-chess):
 chess on a 6×6 board where captured pieces switch sides and can be "dropped"
-back onto any empty square. White starts with knights and Black with bishops,
-so you have to capture the other side's minor pieces to get them.
+back onto any empty square. Each side has two rooks, a queen, a king, a knight
+and a bishop, with the back rank shuffled every game (Fischer random style).
 
 Two players on one device, against a rudimentary computer opponent, or online
 against a friend with a 3+2 clock.
@@ -30,6 +30,12 @@ serves.
 
 ## Rules
 
+- Each side starts with R, R, Q, K, N, B on the back rank and six pawns in
+  front. The back rank is shuffled at the start of every game, and Black's
+  mirrors White's (same piece on the same file), so the only asymmetry is
+  that White moves first. With one bishop each and no castling, none of
+  chess960's placement rules are needed, so all 360 arrangements can come up.
+  Online, the server deals the position so both players get the same one.
 - Moves are standard chess, except that pawns only ever step one square.
   There's no castling and no en passant.
 - Capturing a piece adds it to your **dropships**. On your turn, you can drop
@@ -41,6 +47,7 @@ Changes from the original Jack version:
 
 | | Original | Here |
 |---|---|---|
+| Starting position | Fixed: White has two knights, Black two bishops | Both sides R, R, Q, K, N, B, shuffled each game and mirrored |
 | Rooks/bishops/queens on the board edge | Could wrap around to the other side (index-arithmetic bug) | Fixed |
 | Pawn reaching the last rank | Stuck forever (listed as a limitation) | Promotes to Queen; reverts to a pawn if captured (crazyhouse rule) |
 | Dropping a pawn on the last rank | Allowed (a TODO in the source) | Not allowed |
