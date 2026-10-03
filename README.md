@@ -43,6 +43,8 @@ serves.
   dropped one step from promotion turned out to be too strong.
 - There's no check or checkmate: you win by **capturing the King**. Nothing
   stops a King walking into check, though the UI warns you when it is attacked.
+- If it's your turn and you have no legal move or drop, you lose. This is very
+  rare, but without the rule such a game would just get stuck.
 
 Changes from the original Jack version:
 
@@ -54,6 +56,7 @@ Changes from the original Jack version:
 | Dropping pawns deep | Allowed anywhere (a TODO in the source to forbid the last rank) | Not into the opponent's starting rows (their back two ranks) |
 | Dropships | 12 fixed slots, picked with keys 1–9, 0, -, = | Grouped by piece type with a count |
 | Controls | Arrow keys, Space, Escape | Touch (tap to select, tap to move) |
+| No legal moves | Game gets stuck | The side with no legal move loses |
 | Undo / save | None | Undo history, and the game persists across reloads |
 | AI | None (listed as a future extension) | A basic computer opponent |
 

@@ -153,7 +153,7 @@ export function mountApp(
   const result = (): GameResult | null => {
     if (online) return online.view?.result ?? null;
     const w = current().winner;
-    return w ? { winner: w, reason: 'king' } : null;
+    return w ? { winner: w, reason: current().winBy ?? 'king' } : null;
   };
   /** The colour the person at this device plays, or null when both sides share it. */
   const me = (): Colour | null =>
@@ -257,6 +257,7 @@ export function mountApp(
       <li>Pawns move one square, never two. A pawn that reaches the far rank becomes a
         Queen, and turns back into a pawn if it’s captured. No castling, no en passant.</li>
       <li>You can’t drop a pawn into your opponent’s starting rows.</li>
+      <li>If you have no legal move on your turn, you lose.</li>
       <li>Tap <b>New</b> to play two players on one device, against the computer${
         SERVER_URL ? ', or online against a friend (3 minutes each, plus 2 seconds per move)' : ''}.</li>
     </ul>
@@ -494,7 +495,8 @@ export function mountApp(
     shareBtn.hidden = true;
     if (online) {
       const opp = you ? other(you) : null;
-      const how = res?.reason === 'time' ? 'on time' : 'by capturing the King';
+      const how = res?.reason === 'time' ? 'on time'
+        : res?.reason === 'stuck' ? '(no legal moves left)' : 'by capturing the King';
       const turn = onlineTurn(view);
       if (!view) {
         status.textContent = 'Connecting…';
@@ -520,9 +522,11 @@ export function mountApp(
       }
       if (online.status !== 'open' && view) status.append(' · reconnecting…');
     } else if (s.winner && aiColour !== null) {
-      status.textContent = `${s.winner === aiColour ? 'Computer wins' : 'You win'}, ${score}`;
+      status.textContent = `${s.winner === aiColour ? 'Computer wins' : 'You win'}${
+        s.winBy === 'stuck' ? ' (no legal moves left)' : ''}, ${score}`;
     } else if (s.winner) {
-      status.textContent = `${COLOUR_NAMES[s.winner]} wins, ${score}`;
+      status.textContent = `${COLOUR_NAMES[s.winner]} wins${
+        s.winBy === 'stuck' ? `: ${COLOUR_NAMES[other(s.winner)]} has no legal moves` : ''}, ${score}`;
     } else if (aiToMove()) {
       status.textContent = 'Computer is thinking…';
     } else {

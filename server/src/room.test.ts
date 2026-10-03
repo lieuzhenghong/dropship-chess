@@ -115,6 +115,21 @@ describe('move', () => {
   });
 });
 
+describe('no legal moves', () => {
+  it('ends the game with reason "stuck"', () => {
+    const r = clocking();
+    // Black walled in by its own pieces; White's king move leaves Black stuck.
+    const rows = ['.....K', '......', 'pp....', 'kp....', 'pppppp', 'rrrrrr'];
+    const board = rows.flatMap((line) => [...line].map((ch) =>
+      ch === '.' ? null : { colour: ch === ch.toUpperCase() ? 'w' : 'b', kind: ch.toUpperCase() },
+    )) as (typeof r.game.board)[number][];
+    const s = move({ ...r, game: { ...r.game, board, turn: 'w' } }, 'w',
+      { type: 'move', from: square(0, 5), to: square(0, 4) }, 3000).room;
+    expect(s.result).toEqual({ winner: 'w', reason: 'stuck' });
+    expect(runningClock(s)).toBeNull();
+  });
+});
+
 describe('checkTimeouts', () => {
   it('ends the game once the running clock reaches zero', () => {
     const r = clocking();

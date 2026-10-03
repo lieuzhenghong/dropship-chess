@@ -128,7 +128,9 @@ export function move(room: Room, seat: Colour | null, mv: Move, now: number): Ou
   const timed = room.turnStart !== null;
   const clocks = clocksAt(room, now);
   if (timed) clocks[seat] += INCREMENT_MS;
-  const result: GameResult | null = game.winner ? { winner: game.winner, reason: 'king' } : null;
+  const result: GameResult | null = game.winner
+    ? { winner: game.winner, reason: game.winBy ?? 'king' }
+    : null;
   return {
     room: {
       ...room,

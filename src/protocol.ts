@@ -27,7 +27,8 @@ export type ClientMessage =
 export interface GameResult {
   /** Null when the game was aborted. */
   readonly winner: Colour | null;
-  readonly reason: 'king' | 'time' | 'aborted';
+  /** 'stuck': the loser had no legal move. */
+  readonly reason: 'king' | 'time' | 'stuck' | 'aborted';
 }
 
 export interface RoomView {

@@ -8,7 +8,8 @@
 //   - Pawns move one square forward, capture one square diagonally forward.
 //     No double step, no en passant. No castling.
 //   - No check/checkmate: you win by capturing the opponent's King, and
-//     nothing stops a King walking into check.
+//     nothing stops a King walking into check. (Added here: a player with no
+//     legal move loses, so a game can't get stuck.)
 //   - Drops go onto any empty square and use your turn.
 // Changes from the original:
 //   - Starting position: the original gave White two knights and Black two
@@ -54,6 +55,8 @@ export interface GameState {
   readonly hands: Readonly<Record<Colour, Hand>>;
   readonly turn: Colour;
   readonly winner: Colour | null;
+  /** How the game was won: the King was captured, or the loser had no legal move. */
+  readonly winBy?: 'king' | 'stuck';
   readonly lastMove: Move | null;
 }
 
@@ -252,13 +255,24 @@ export function applyMove(state: GameState, move: Move): GameState {
         : piece;
   }
 
-  return {
-    board,
-    hands,
-    turn: winner ? mover : other(mover),
-    winner,
-    lastMove: move,
-  };
+  if (winner) return { board, hands, turn: mover, winner, winBy: 'king', lastMove: move };
+  const next: GameState = { board, hands, turn: other(mover), winner: null, lastMove: move };
+  // A player who can't move loses.
+  return hasLegalMove(next) ? next : { ...next, turn: mover, winner: mover, winBy: 'stuck' };
+}
+
+/**
+ * Whether the side to move has any legal move. Stops at the first one found,
+ * since this runs after every move (including inside the AI's search).
+ */
+export function hasLegalMove(state: GameState): boolean {
+  for (let sq = 0; sq < SQUARES; sq++) {
+    const p = state.board[sq];
+    if (p?.colour === state.turn && pieceTargets(state.board, sq).length > 0) return true;
+  }
+  // No piece can move; a drop is the only way out. dropTargets works here
+  // because the game isn't over yet.
+  return HAND_KINDS.some((kind) => dropTargets(state, kind).length > 0);
 }
 
 /** True if `colour`'s King could be captured on the opponent's next move. */
