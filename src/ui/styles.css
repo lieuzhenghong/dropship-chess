@@ -152,7 +152,7 @@ button {
   outline: none;
 }
 
-/* The piece sits above the highlight overlay (::after) but below the cursor. */
+/* The piece sits above the highlight overlay (::after). */
 .piece {
   position: absolute;
   inset: 0;
@@ -338,27 +338,9 @@ button:not(.cell):active:not(:disabled) {
   background: color-mix(in srgb, var(--danger) 25%, transparent);
 }
 
-/* Keyboard cursor, drawn as corner brackets like the original sprite. */
-.cell.cursor::before,
-.cell:focus-visible::before {
-  content: '';
-  position: absolute;
-  inset: 3px;
-  z-index: 2;
-  pointer-events: none;
-  --c: var(--accent);
-  --l: 28%;
-  --w: 3px;
-  background:
-    linear-gradient(var(--c) 0 0) top left / var(--l) var(--w),
-    linear-gradient(var(--c) 0 0) top left / var(--w) var(--l),
-    linear-gradient(var(--c) 0 0) top right / var(--l) var(--w),
-    linear-gradient(var(--c) 0 0) top right / var(--w) var(--l),
-    linear-gradient(var(--c) 0 0) bottom left / var(--l) var(--w),
-    linear-gradient(var(--c) 0 0) bottom left / var(--w) var(--l),
-    linear-gradient(var(--c) 0 0) bottom right / var(--l) var(--w),
-    linear-gradient(var(--c) 0 0) bottom right / var(--w) var(--l);
-  background-repeat: no-repeat;
+/* Squares are buttons, so Tab/Enter work natively; show where focus is. */
+.cell:focus-visible {
+  box-shadow: inset 0 0 0 3px var(--accent);
 }
 
 /* ---- Hands ("dropships") ---- */
@@ -576,11 +558,6 @@ button:not(.cell):active:not(:disabled) {
 
 .sheet li + li {
   margin-top: 6px;
-}
-
-.sheet .keys {
-  font-size: 0.75rem;
-  opacity: 0.75;
 }
 
 .sheet form {

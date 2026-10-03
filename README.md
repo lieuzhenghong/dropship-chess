@@ -7,8 +7,7 @@ and a bishop, with the back rank shuffled every game (Fischer random style).
 
 Two players on one device, against a rudimentary computer opponent, or online
 against a friend with a 3+2 clock.
-Touch-first, and it also works with a keyboard. The
-pieces are the original 32×32 1-bit sprites, extracted from `SpriteSheet.jack`.
+Touch-first. The pieces are the original 32×32 1-bit sprites, extracted from `SpriteSheet.jack`.
 
 ## Running
 
@@ -53,7 +52,8 @@ Changes from the original Jack version:
 | Rooks/bishops/queens on the board edge | Could wrap around to the other side (index-arithmetic bug) | Fixed |
 | Pawn reaching the last rank | Stuck forever (listed as a limitation) | Promotes to Queen; reverts to a pawn if captured (crazyhouse rule) |
 | Dropping pawns deep | Allowed anywhere (a TODO in the source to forbid the last rank) | Not into the opponent's starting rows (their back two ranks) |
-| Dropships | 12 fixed slots, picked with keys 1–9, 0, -, = | Grouped by piece type with a count, keys 1–5 |
+| Dropships | 12 fixed slots, picked with keys 1–9, 0, -, = | Grouped by piece type with a count |
+| Controls | Arrow keys, Space, Escape | Touch (tap to select, tap to move) |
 | Undo / save | None | Undo history, and the game persists across reloads |
 | AI | None (listed as a future extension) | A basic computer opponent |
 
@@ -119,10 +119,9 @@ The online option appears only once this is set.
 
 ## Controls
 
-- **Touch/mouse:** tap a piece, then tap a highlighted square. To drop, tap a
-  piece in your dropships, then an empty square.
-- **Keyboard:** arrow keys move the cursor, Space/Enter selects, Esc cancels,
-  1–5 pick a dropship (P, N, B, R, Q), U undoes.
+Tap a piece, then tap a highlighted square. To drop, tap a piece in your
+dropships, then an empty square. (Squares and buttons are ordinary buttons, so
+Tab and Enter work too.)
 
 ## Layout
 
