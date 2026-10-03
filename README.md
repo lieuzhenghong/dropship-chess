@@ -84,17 +84,22 @@ npm run server:dev                                  # local server on :8787
 VITE_SERVER_URL=ws://localhost:8787 npm run dev     # client pointing at it
 ```
 
-To deploy:
+The Worker config is `wrangler.toml` at the repo root, so a plain
+`npx wrangler deploy` works. To deploy, pick **one** of:
 
-1. Create a Cloudflare account. Durable Objects (SQLite-backed) are
-   available on the free plan.
-2. Either run `npx wrangler login && npm run server:deploy` once, or add
-   repository secrets `CLOUDFLARE_API_TOKEN` (with the "Edit Cloudflare Workers"
-   template) and `CLOUDFLARE_ACCOUNT_ID`. CI then deploys the server on every
-   push to `master`.
-3. Set the repository variable `SERVER_URL` to the deployed address, e.g.
-   `wss://dropship-chess.<your-subdomain>.workers.dev`, and re-run the
-   workflow. The online option appears only once this is set.
+- **Cloudflare's Git integration** (Workers & Pages → Create → Import a
+  repository): the defaults work. It deploys on every push to `master`.
+- **GitHub Actions**: add repository secrets `CLOUDFLARE_API_TOKEN` (from the
+  "Edit Cloudflare Workers" template) and `CLOUDFLARE_ACCOUNT_ID`. The
+  `deploy-server` job then deploys on every push to `master`, and skips itself
+  when the secrets are absent.
+- **By hand**: `npx wrangler login && npm run server:deploy`.
+
+Durable Objects (SQLite-backed) are available on Cloudflare's free plan.
+
+Then set the repository variable `SERVER_URL` to the deployed address, e.g.
+`wss://dropship-chess.<your-subdomain>.workers.dev`, and re-run the workflow.
+The online option appears only once this is set.
 
 ## Controls
 
@@ -115,6 +120,7 @@ src/
   sprites/render.ts     sprite → transparent PNG (background removed by flood fill)
   storage.ts            KeyValueStore interface + localStorage implementation
   ui/app.ts, styles.css DOM UI
+wrangler.toml           Worker config (entry point: server/src/index.ts)
 server/
   src/room.ts           authoritative game + clock logic (pure, tested)
   src/index.ts          Worker entry + Durable Object (one per game)

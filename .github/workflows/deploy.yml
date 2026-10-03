@@ -4,7 +4,8 @@ name: CI and Pages
 #   - publish dist/ to the gh-pages branch, which GitHub Pages serves
 #     (Settings → Pages → "Deploy from a branch", gh-pages / root);
 #   - deploy the game server (server/) to Cloudflare, if the
-#     CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets are set.
+#     CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets are set. Leave
+#     them unset if Cloudflare's own Git integration deploys the Worker.
 # Online play only appears in the web app when the SERVER_URL repository
 # variable (e.g. wss://dropship-chess.<subdomain>.workers.dev) is set.
 on:

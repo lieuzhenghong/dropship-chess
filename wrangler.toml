@@ -1,5 +1,5 @@
 name = "dropship-chess"
-main = "src/index.ts"
+main = "server/src/index.ts"
 compatibility_date = "2026-09-01"
 
 [[durable_objects.bindings]]

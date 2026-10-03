@@ -10,8 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc -p server --noEmit",
     "sprites": "node scripts/extract-sprites.mjs",
-    "server:dev": "wrangler dev --config server/wrangler.toml",
-    "server:deploy": "wrangler deploy --config server/wrangler.toml"
+    "server:dev": "wrangler dev",
+    "server:deploy": "wrangler deploy"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261003.1",
