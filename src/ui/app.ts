@@ -461,7 +461,8 @@ export function mountApp(
     const view = online?.view ?? null;
     const you = view?.you ?? null;
     const res = result();
-    const flipped = you === 'b';
+    // Your side at the bottom: online, or against the computer.
+    const flipped = me() === 'b';
     boardEl.classList.toggle('flipped', flipped);
     gameEl.classList.toggle('flipped', flipped);
 
