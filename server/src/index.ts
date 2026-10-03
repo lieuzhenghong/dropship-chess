@@ -4,12 +4,25 @@
 //
 // The object stores a `Room` (see room.ts) and uses the WebSocket Hibernation
 // API, so it can be evicted from memory between moves without dropping the
-// players' connections.
+// players' connections. A single alarm wakes it for whatever comes next: a
+// first-move deadline, a clock running out, or deleting the game.
 
 import { DurableObject } from 'cloudflare:workers';
 import type { Colour } from '../../src/engine/rules';
-import type { ClientMessage, ServerMessage } from '../../src/protocol';
-import { checkFlag, clocksAt, join, move, newRoom, type Room, runningClock } from './room';
+import { CLOSE_GAME_EXPIRED, type ClientMessage, type ServerMessage } from '../../src/protocol';
+import {
+  checkTimeouts,
+  clocksAt,
+  expiresAt,
+  isStarted,
+  join,
+  move,
+  newRoom,
+  nextWake,
+  type Room,
+  runningClock,
+  upgradeRoom,
+} from './room';
 
 interface Env {
   GAME: DurableObjectNamespace<Game>;
@@ -48,8 +61,8 @@ export class Game extends DurableObject<Env> {
       return this.send(ws, { t: 'error', message: 'Bad message.' });
     }
     const now = Date.now();
-    const before = await this.load();
-    let room = checkFlag(before, now);
+    const before = await this.load(now);
+    let room = checkTimeouts(before, now);
     const { seat } = ws.deserializeAttachment() as Attachment;
 
     switch (msg.t) {
@@ -69,12 +82,12 @@ export class Game extends DurableObject<Env> {
         break;
       }
       case 'flag':
-        break; // checkFlag above already did the work
+        break; // checkTimeouts above already did the work
       default:
         return this.send(ws, { t: 'error', message: 'Unknown message.' });
     }
 
-    if (room !== before) await this.ctx.storage.put('room', room);
+    if (room !== before) await this.save(room);
     // Joins always broadcast so the opponent sees the connection indicator change.
     this.broadcast(room, now);
   }
@@ -85,11 +98,44 @@ export class Game extends DurableObject<Env> {
     } catch {
       // Already closed.
     }
-    this.broadcast(await this.load(), Date.now(), ws);
+    const stored = await this.ctx.storage.get<Room>('room');
+    if (stored) this.broadcast(upgradeRoom(stored, Date.now()), Date.now(), ws);
   }
 
-  private async load(): Promise<Room> {
-    return (await this.ctx.storage.get<Room>('room')) ?? newRoom();
+  /** Wakes for a first-move deadline, a clock running out, or deletion. */
+  async alarm(): Promise<void> {
+    const stored = await this.ctx.storage.get<Room>('room');
+    if (!stored) return;
+    const now = Date.now();
+    const room = upgradeRoom(stored, now);
+    if (now >= expiresAt(room)) {
+      for (const ws of this.ctx.getWebSockets()) {
+        try {
+          ws.close(CLOSE_GAME_EXPIRED, 'Game expired');
+        } catch {
+          // Already closed.
+        }
+      }
+      await this.ctx.storage.deleteAll();
+      return;
+    }
+    const next = checkTimeouts(room, now);
+    if (next !== room) {
+      await this.save(next);
+      this.broadcast(next, now);
+    } else {
+      await this.ctx.storage.setAlarm(nextWake(room));
+    }
+  }
+
+  private async load(now: number): Promise<Room> {
+    const stored = await this.ctx.storage.get<Room>('room');
+    return stored ? upgradeRoom(stored, now) : newRoom(now);
+  }
+
+  private async save(room: Room): Promise<void> {
+    await this.ctx.storage.put('room', room);
+    await this.ctx.storage.setAlarm(nextWake(room));
   }
 
   private send(ws: WebSocket, msg: ServerMessage): void {
@@ -105,13 +151,16 @@ export class Game extends DurableObject<Env> {
     const seats = sockets.map((s) => (s.deserializeAttachment() as Attachment).seat);
     const connected = { w: seats.includes('w'), b: seats.includes('b') };
     const clocks = clocksAt(room, now);
+    const abortIn = room.abortAt !== null && !room.result ? Math.max(0, room.abortAt - now) : null;
     sockets.forEach((s, i) =>
       this.send(s, {
         t: 'state',
         you: seats[i],
         game: room.game,
+        started: isStarted(room),
         clocks,
         running: runningClock(room),
+        abortIn,
         connected,
         result: room.result,
       }),

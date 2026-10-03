@@ -135,10 +135,18 @@ export function mountApp(
   const aiToMove = () =>
     !online && aiColour !== null && current().turn === aiColour && !current().winner;
   /** Whether the person at this device may move now. */
+  /** Whose move it is in a started, unfinished online game. */
+  const onlineTurn = (v: RoomView | null | undefined): Colour | null =>
+    v && v.started && !v.result ? v.game.turn : null;
   const canAct = (): boolean => {
     if (!online) return !current().winner && !aiToMove();
     const v = online.view;
-    return !!v && v.you !== null && v.running === v.you && online.status === 'open';
+    return !!v && v.you !== null && onlineTurn(v) === v.you && online.status === 'open';
+  };
+  /** Time left to make a first move, counting down locally. */
+  const abortLeft = (): number | null => {
+    const v = online?.view;
+    return v?.abortIn != null ? Math.max(0, v.abortIn - (Date.now() - online!.receivedAt)) : null;
   };
   const result = (): GameResult | null => {
     if (online) return online.view?.result ?? null;
@@ -227,6 +235,7 @@ export function mountApp(
 
   const status = el('p', { className: 'status' });
   status.setAttribute('role', 'status');
+  const abortEl = el('span', { className: 'abort' });
   const shareBtn = el('button', { className: 'icon-btn share', type: 'button', textContent: 'Share invite link' });
   shareBtn.hidden = true;
 
@@ -306,12 +315,14 @@ export function mountApp(
         // Show the move straight away; the server's next snapshot is authoritative.
         const next = applyMove(s, move);
         const clocks = liveClocks()!;
-        clocks[s.turn] += INCREMENT_MS;
+        const timed = online.view.running !== null; // first moves are untimed
+        if (timed) clocks[s.turn] += INCREMENT_MS;
         online.view = {
           ...online.view,
           game: next,
           clocks,
-          running: next.winner ? null : next.turn,
+          running: timed && !next.winner ? next.turn : null,
+          abortIn: null,
         };
         online.receivedAt = Date.now();
         online.conn.sendMove(move);
@@ -379,7 +390,7 @@ export function mountApp(
         onState(view, receivedAt) {
           if (!online) return;
           const prev = online.view;
-          if (prev && !prev.running && !prev.result && view.running) feedback.play('start');
+          if (prev && !prev.started && view.started && !view.result) feedback.play('start');
           online.view = view;
           online.receivedAt = receivedAt;
           online.flagClaimed = false;
@@ -460,7 +471,7 @@ export function mountApp(
 
     (['w', 'b'] as const).forEach((colour) => {
       const { section, slots, title } = hands[colour];
-      section.classList.toggle('active', online ? view?.running === colour : !res && s.turn === colour);
+      section.classList.toggle('active', online ? onlineTurn(view) === colour : !res && s.turn === colour);
       if (online && you) {
         title.textContent = colour === you ? 'Your dropships' : 'Opponent’s dropships';
       } else {
@@ -485,23 +496,34 @@ export function mountApp(
     if (online) {
       const opp = you ? other(you) : null;
       const how = res?.reason === 'time' ? 'on time' : 'by capturing the King';
-      if (!view) {
+      const turn = onlineTurn(view);
+      if (online.status === 'expired') {
+        status.textContent = 'This game has expired. Tap New to start another.';
+      } else if (!view) {
         status.textContent = 'Connecting…';
-      } else if (res) {
+      } else if (res?.reason === 'aborted') {
+        status.textContent = 'Game aborted: a first move wasn’t made in time.';
+      } else if (res && res.winner) {
         status.textContent = you
           ? `${res.winner === you ? 'You win' : 'You lose'} ${how}, ${score}`
           : `${COLOUR_NAMES[res.winner]} wins ${how}, ${score}`;
-      } else if (!view.running) {
+      } else if (!view.started) {
         status.textContent = 'Waiting for your opponent to open the link…';
         shareBtn.hidden = you !== 'w';
       } else if (!you) {
         status.textContent = `Watching · ${COLOUR_NAMES[s.turn]} to move`;
       } else {
-        status.textContent = `${view.running === you ? 'Your move' : 'Opponent’s move'}${
-          view.running === you && checked.includes(you) ? ' · your King is under attack' : ''
+        status.textContent = `${turn === you ? 'Your move' : 'Opponent’s move'}${
+          turn === you && checked.includes(you) ? ' · your King is under attack' : ''
         }${opp && !view.connected[opp] ? ' · opponent offline' : ''}`;
       }
-      if (online.status !== 'open' && view) status.textContent += ' · reconnecting…';
+      if (view && !res && view.abortIn !== null && view.started) {
+        status.append(abortEl);
+        renderAbort();
+      }
+      if (online.status !== 'open' && online.status !== 'expired' && view) {
+        status.append(' · reconnecting…');
+      }
     } else if (s.winner && aiColour !== null) {
       status.textContent = `${s.winner === aiColour ? 'Computer wins' : 'You win'}, ${score}`;
     } else if (s.winner) {
@@ -514,10 +536,10 @@ export function mountApp(
       }`;
     }
     status.classList.toggle('over', !!res);
-    gameEl.classList.toggle('lost', !!res && me() !== null && res.winner !== me());
-    document.title = online && you && view?.running === you
+    gameEl.classList.toggle('lost', !!res?.winner && me() !== null && res.winner !== me());
+    document.title = online && you && onlineTurn(view) === you
       ? `● Your move · ${BASE_TITLE}`
-      : res && me() ? `${res.winner === me() ? 'You win' : 'You lose'} · ${BASE_TITLE}` : BASE_TITLE;
+      : res?.winner && me() ? `${res.winner === me() ? 'You win' : 'You lose'} · ${BASE_TITLE}` : BASE_TITLE;
     if (tr && prevState) playTransition(tr, prevState, s);
     // Celebrate (or commiserate) once when a game ends, however it ended.
     if (lastResult === null && res) celebrate(res);
@@ -566,10 +588,20 @@ export function mountApp(
   }
 
   function celebrate(res: GameResult) {
+    fx.bump(status);
+    if (!res.winner) return; // aborted: nothing to celebrate
     const won = me() === null || res.winner === me();
     feedback.play(won ? 'win' : 'lose');
     if (won) setTimeout(() => fx.confetti(CONFETTI), 200);
-    fx.bump(status);
+  }
+
+  /** The first-move countdown shown in the status line. */
+  function renderAbort() {
+    const left = abortLeft();
+    if (left === null) return;
+    const mine = online?.view && onlineTurn(online.view) === online.view.you;
+    abortEl.textContent = ` · ${mine ? 'first move within' : 'first move due in'} ${Math.ceil(left / 1000)}s`;
+    abortEl.classList.toggle('urgent', left < 10_000);
   }
 
   /** Updates the clock readouts; also asks the server to call a flag we can see. */
@@ -601,6 +633,7 @@ export function mountApp(
   }
   setInterval(() => {
     if (online?.view?.running) renderClocks();
+    if (online?.view?.abortIn != null) renderAbort();
   }, 100);
 
   // ---- Input ----

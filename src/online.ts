@@ -2,13 +2,14 @@
 // automatically (mobile browsers drop sockets whenever the screen locks).
 
 import type { Move } from './engine/rules';
-import type { ClientMessage, RoomView, ServerMessage } from './protocol';
+import { CLOSE_GAME_EXPIRED, type ClientMessage, type RoomView, type ServerMessage } from './protocol';
 import type { KeyValueStore } from './storage';
 
 /** Game server base URL (ws:// or wss://), set at build time. Empty disables online play. */
 export const SERVER_URL: string = import.meta.env.VITE_SERVER_URL ?? '';
 
-export type ConnectionStatus = 'connecting' | 'open' | 'closed';
+/** 'expired' means the server has deleted the game; we stop reconnecting. */
+export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'expired';
 
 export interface OnlineGame {
   sendMove(move: Move): void;
@@ -31,14 +32,29 @@ function randomId(length: number): string {
 
 export const newGameId = (): string => randomId(10);
 
+const TOKEN_PREFIX = 'dropship-chess:online:';
+const TOKEN_INDEX = 'dropship-chess:online-games';
+/** How many games' tokens to keep; older ones can no longer be rejoined. */
+const MAX_TOKENS = 20;
+
 /** The player's secret for a game, created on first visit and reused on reconnect. */
 function playerToken(store: KeyValueStore, gameId: string): string {
-  const key = `dropship-chess:online:${gameId}`;
-  let token = store.get(key);
+  let token = store.get(TOKEN_PREFIX + gameId);
   if (!token) {
     token = randomId(24);
-    store.set(key, token);
+    store.set(TOKEN_PREFIX + gameId, token);
   }
+  // Keep a most-recent-last list of games and forget the oldest tokens.
+  let ids: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(store.get(TOKEN_INDEX) ?? '[]');
+    if (Array.isArray(parsed)) ids = parsed.filter((x): x is string => typeof x === 'string');
+  } catch {
+    // Start a fresh list.
+  }
+  ids = [...ids.filter((id) => id !== gameId), gameId];
+  for (const old of ids.splice(0, Math.max(0, ids.length - MAX_TOKENS))) store.remove(TOKEN_PREFIX + old);
+  store.set(TOKEN_INDEX, JSON.stringify(ids));
   return token;
 }
 
@@ -73,9 +89,14 @@ export function connect(gameId: string, store: KeyValueStore, handlers: OnlineHa
       if (msg.t === 'state') handlers.onState(msg, Date.now());
       else if (msg.t === 'error') handlers.onError(msg.message);
     };
-    socket.onclose = () => {
+    socket.onclose = (e) => {
       if (ws !== socket) return;
       ws = null;
+      if (e.code === CLOSE_GAME_EXPIRED) {
+        closedByUs = true;
+        handlers.onStatus('expired');
+        return;
+      }
       handlers.onStatus('closed');
       if (closedByUs) return;
       retryTimer = setTimeout(open, retryDelay);

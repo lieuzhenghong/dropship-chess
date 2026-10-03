@@ -518,6 +518,15 @@ button:not(.cell):active:not(:disabled) {
   text-align: center;
 }
 
+.status .abort {
+  font-weight: 400;
+}
+
+.status .abort.urgent {
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .status.over {
   color: var(--paper);
   background: var(--ink);

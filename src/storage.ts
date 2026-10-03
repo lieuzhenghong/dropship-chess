@@ -6,6 +6,7 @@ import { type GameState, HAND_KINDS, SQUARES } from './engine/rules';
 export interface KeyValueStore {
   get(key: string): string | null;
   set(key: string, value: string): void;
+  remove(key: string): void;
 }
 
 export const localStore: KeyValueStore = {
@@ -21,6 +22,13 @@ export const localStore: KeyValueStore = {
       localStorage.setItem(key, value);
     } catch {
       // Private mode / storage disabled: the game still works, just unsaved.
+    }
+  },
+  remove(key) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // As above.
     }
   },
 };
