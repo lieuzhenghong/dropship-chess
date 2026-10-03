@@ -12,7 +12,6 @@ import {
   type Room,
   runningClock,
   seatOf,
-  upgradeRoom,
 } from './room';
 
 const e2e3 = { type: 'move', from: square(4, 4), to: square(3, 4) } as const;
@@ -170,15 +169,5 @@ describe('checkTimeouts', () => {
   it('does nothing before an opponent joins', () => {
     const r = join(newRoom(), 'alice', 0).room;
     expect(checkTimeouts(r, 10 * INITIAL_CLOCK_MS)).toBe(r);
-  });
-});
-
-describe('upgradeRoom', () => {
-  it('treats rooms saved before untimed first moves as already clocking', () => {
-    const { plies, abortAt, ...old } = clocking();
-    void plies; void abortAt;
-    const up = upgradeRoom(old);
-    expect(up.plies).toBe(2);
-    expect(up.abortAt).toBeNull();
   });
 });

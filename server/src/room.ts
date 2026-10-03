@@ -58,16 +58,6 @@ export function newRoom(): Room {
   };
 }
 
-/** Fills in fields missing from rooms saved by older versions of the server. */
-export function upgradeRoom(stored: Partial<Room>): Room {
-  const room = { ...newRoom(), ...stored };
-  if (stored.plies === undefined) {
-    // Old rooms started their clock as soon as Black joined.
-    return { ...room, plies: stored.turnStart != null || stored.result ? 2 : 0 };
-  }
-  return room;
-}
-
 /** Remaining time for each side at `now`, counting the running turn. */
 export function clocksAt(room: Room, now: number): Record<Colour, number> {
   const clocks = { ...room.clocks };
