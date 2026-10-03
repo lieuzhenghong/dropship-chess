@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { initialState, positionKey, square } from '../../src/engine/rules';
+import { square } from '../../src/engine/rules';
 import { FIRST_MOVE_MS, INCREMENT_MS, INITIAL_CLOCK_MS } from '../../src/protocol';
 import {
   checkTimeouts,
@@ -133,23 +133,6 @@ describe('no legal moves', () => {
   });
 });
 
-describe('no repetition', () => {
-  it('rejects a move that recreates an earlier position', () => {
-    // A clocking room reset to the fixed default start (knights on b1/b6).
-    const start = initialState();
-    let r: Room = { ...clocking(), game: start, positions: [positionKey(start)] };
-    const mv = (fr: number, fc: number, tr: number, tc: number) =>
-      ({ type: 'move', from: square(fr, fc), to: square(tr, tc) }) as const;
-    r = move(r, 'w', mv(5, 1, 3, 2), 3000).room; // Nb1-c3
-    r = move(r, 'b', mv(0, 1, 2, 2), 4000).room; // Nb6-c4
-    r = move(r, 'w', mv(3, 2, 5, 1), 5000).room; // Nc3-b1
-    expect(r.positions).toHaveLength(4);
-    expect(r.positions.at(-1)).toBe(positionKey(r.game));
-    // Nc4-b6 would recreate the starting position.
-    expect(move(r, 'b', mv(2, 2, 0, 1), 6000).error).toMatch(/Illegal/);
-  });
-});
-
 describe('resign and rematch', () => {
   it('resigning loses for the resigner and stops the clocks', () => {
     const { room, error } = resign(clocking(), 'b', 5000);
@@ -174,7 +157,6 @@ describe('resign and rematch', () => {
     expect(seatOf(fresh, 'alice')).toBe('b');
     expect(seatOf(fresh, 'bob')).toBe('w');
     expect(fresh.abortAt).toBe(7000 + FIRST_MOVE_MS);
-    expect(fresh.positions).toEqual([positionKey(fresh.game)]);
   });
 });
 

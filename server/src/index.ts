@@ -145,7 +145,6 @@ export class Game extends DurableObject<Env> {
         abortIn,
         connected,
         result: room.result,
-        seen: room.positions,
         rematch: { w: !!room.rematch.w, b: !!room.rematch.b },
       }),
     );

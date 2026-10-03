@@ -17,7 +17,6 @@ import {
   isLegal,
   type Move,
   other,
-  positionKey,
   randomBackRank,
 } from '../../src/engine/rules';
 import {
@@ -39,8 +38,6 @@ export interface Room {
   /** Deadline for the side to move's untimed first move; null otherwise. */
   readonly abortAt: number | null;
   readonly result: GameResult | null;
-  /** Every position so far, including the current one (no-repetition rule). */
-  readonly positions: readonly string[];
   /** Players who've asked for a rematch since the game ended. */
   readonly rematch: Readonly<Partial<Record<Colour, boolean>>>;
 }
@@ -57,16 +54,13 @@ export function newRoom(): Room {
     turnStart: null,
     abortAt: null,
     result: null,
-    positions: [positionKey(game)],
     rematch: {},
   };
 }
 
 /** Fills in fields missing from rooms saved by older versions of the server. */
 export function upgradeRoom(stored: Partial<Room>): Room {
-  let room = { ...newRoom(), ...stored };
-  // Older rooms didn't track positions; start the history from now.
-  if (stored.positions === undefined) room = { ...room, positions: [positionKey(room.game)] };
+  const room = { ...newRoom(), ...stored };
   if (stored.plies === undefined) {
     // Old rooms started their clock as soon as Black joined.
     return { ...room, plies: stored.turnStart != null || stored.result ? 2 : 0 };
@@ -131,10 +125,9 @@ export function move(room: Room, seat: Colour | null, mv: Move, now: number): Ou
   if (room.result) return { room, error: 'The game is over.' };
   if (!isStarted(room)) return { room, error: 'Waiting for an opponent.' };
   if (seat !== room.game.turn) return { room, error: 'Not your turn.' };
-  const seen = new Set(room.positions);
-  if (!isLegal(room.game, mv, seen)) return { room, error: 'Illegal move.' };
+  if (!isLegal(room.game, mv)) return { room, error: 'Illegal move.' };
 
-  const game = applyMove(room.game, mv, seen);
+  const game = applyMove(room.game, mv);
   const plies = room.plies + 1;
   const timed = room.turnStart !== null;
   const clocks = clocksAt(room, now);
@@ -153,7 +146,6 @@ export function move(room: Room, seat: Colour | null, mv: Move, now: number): Ou
       turnStart: result || plies < 2 ? null : now,
       abortAt: result || plies >= 2 ? null : now + FIRST_MOVE_MS,
       result,
-      positions: [...room.positions, positionKey(game)],
     },
   };
 }

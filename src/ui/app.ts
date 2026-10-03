@@ -12,8 +12,6 @@ import {
   type Kind,
   type Move,
   moveTargets,
-  positionKey,
-  type Seen,
   type Piece,
   other,
   row,
@@ -264,8 +262,6 @@ export function mountApp(
         Queen, and turns back into a pawn if it’s captured. No castling, no en passant.</li>
       <li>You can’t drop a pawn into your opponent’s starting rows.</li>
       <li>If you have no legal move on your turn, you lose.</li>
-      <li>No move may recreate a position that has already happened, so games can’t
-        go round in circles.</li>
       <li>Tap <b>New</b> to play two players on one device, against the computer${
         SERVER_URL ? ', or online against a friend (3 minutes each, plus 2 seconds per move)' : ''}.</li>
     </ul>
@@ -298,16 +294,12 @@ export function mountApp(
     saveHistory(store, history);
   };
 
-  /** Positions that have occurred this game, for the no-repetition rule. */
-  const seen = (): Seen =>
-    new Set(online ? (online.view?.seen ?? []) : history.map(positionKey));
-
   const targets = (): number[] => {
     const s = current();
     if (!selection) return [];
     return selection.type === 'square'
-      ? moveTargets(s, selection.sq, seen())
-      : dropTargets(s, selection.kind, seen());
+      ? moveTargets(s, selection.sq)
+      : dropTargets(s, selection.kind);
   };
 
   const activateSquare = (sq: number) => {
@@ -326,14 +318,13 @@ export function mountApp(
           : { type: 'drop', kind: selection.kind, to: sq };
       if (online?.view) {
         // Show the move straight away; the server's next snapshot is authoritative.
-        const next = applyMove(s, move, seen());
+        const next = applyMove(s, move);
         const clocks = liveClocks()!;
         const timed = online.view.running !== null; // first moves are untimed
         if (timed) clocks[s.turn] += INCREMENT_MS;
         online.view = {
           ...online.view,
           game: next,
-          seen: [...(online.view.seen ?? []), positionKey(next)],
           clocks,
           running: timed && !next.winner ? next.turn : null,
           abortIn: null,
@@ -342,7 +333,7 @@ export function mountApp(
         online.conn.sendMove(move);
         selection = null;
       } else {
-        commit(applyMove(s, move, seen()));
+        commit(applyMove(s, move));
       }
     } else if (s.board[sq]?.colour === s.turn &&
                !(selection?.type === 'square' && selection.sq === sq)) {
@@ -446,9 +437,9 @@ export function mountApp(
     if (!aiToMove()) return;
     aiTimer = setTimeout(() => {
       if (!aiToMove()) return;
-      const move = chooseMove(current(), { seen: seen() });
+      const move = chooseMove(current());
       if (!move) return;
-      commit(applyMove(current(), move, seen()));
+      commit(applyMove(current(), move));
       render();
     }, AI_DELAY_MS);
   };

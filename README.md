@@ -47,12 +47,8 @@ serves.
   stops a King walking into check, though the UI warns you when it is attacked.
 - If it's your turn and you have no legal move or drop, you lose. This is very
   rare, but without the rule such a game would just get stuck.
-- **No repetition:** a move may not recreate a position that has already
-  happened (same board, same hands, same side to move). This is the "superko"
-  rule from Go. Games always make progress, and together with the previous rule
-  there are no draws. Repeating moves simply aren't highlighted. The computer
-  respects the rule for the moves it plays, but ignores it inside its search
-  for speed.
+- Positions may repeat, so in principle a game can cycle forever. There's no
+  draw rule; in practice, someone deviates or resigns.
 
 Changes from the original Jack version:
 
@@ -65,7 +61,6 @@ Changes from the original Jack version:
 | Dropships | 12 fixed slots, picked with keys 1–9, 0, -, = | Grouped by piece type with a count |
 | Controls | Arrow keys, Space, Escape | Touch (tap to select, tap to move) |
 | No legal moves | Game gets stuck | The side with no legal move loses |
-| Repetition | Allowed (games can cycle forever) | Not allowed: a move can't recreate an earlier position |
 | Undo / save | None | Undo history, and the game persists across reloads |
 | AI | None (listed as a future extension) | A basic computer opponent |
 

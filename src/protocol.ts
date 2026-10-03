@@ -52,8 +52,6 @@ export interface RoomView {
   /** Which players currently have a live connection. */
   readonly connected: Readonly<Record<Colour, boolean>>;
   readonly result: GameResult | null;
-  /** Every position so far (positionKey), for the no-repetition rule. */
-  readonly seen: readonly string[];
   /** Which players have asked for a rematch since the game ended. */
   readonly rematch: Readonly<Record<Colour, boolean>>;
 }

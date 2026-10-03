@@ -54,18 +54,6 @@ test('local play: move, capture, drop', async ({ browser }) => {
   expect(errors).toEqual([]);
 });
 
-test('local play: no repeating an earlier position', async ({ browser }) => {
-  const { page } = await open(browser, initialState());
-  for (const [from, to] of [[[5, 1], [3, 2]], [[0, 1], [2, 2]], [[3, 2], [5, 1]]] as const) {
-    await page.tap(sq(...from));
-    await page.tap(sq(...to));
-  }
-  // Black's knight could go back to b6, but that would recreate the start.
-  await page.tap(sq(2, 2));
-  await expect(page.locator(`${sq(0, 1)}.target`)).toHaveCount(0);
-  await expect(page.locator('.cell.target, .cell.capture').first()).toBeVisible();
-});
-
 test('vs computer: it replies to a move', async ({ browser }) => {
   const { page, errors } = await open(browser);
   await page.getByRole('button', { name: 'New' }).click();

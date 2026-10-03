@@ -4,11 +4,9 @@ import {
   dropTargets,
   type GameState,
   inCheck,
-  allMoves,
   hasLegalMove,
   initialState,
   isLegal,
-  positionKey,
   randomBackRank,
   moveTargets,
   type Piece,
@@ -199,57 +197,6 @@ describe('no legal moves', () => {
     let s = fromDiagram(['....k.', '......', '......', '......', '......', 'K...R.']);
     s = applyMove(s, { type: 'move', from: square(5, 4), to: square(0, 4) });
     expect(s.winBy).toBe('king');
-  });
-});
-
-describe('no repetition (superko)', () => {
-  const mv = (fr: number, fc: number, tr: number, tc: number) =>
-    ({ type: 'move', from: square(fr, fc), to: square(tr, tc) }) as const;
-
-  /** Plays moves while tracking seen positions, as the app and server do. */
-  function playAll(moves: ReturnType<typeof mv>[]) {
-    let s = initialState();
-    const seen = new Set([positionKey(s)]);
-    for (const m of moves) {
-      s = applyMove(s, m, seen);
-      seen.add(positionKey(s));
-    }
-    return { s, seen };
-  }
-
-  it('positionKey tells apart side to move, hands and promoted queens', () => {
-    const s = initialState();
-    expect(positionKey(s)).not.toBe(positionKey({ ...s, turn: 'b' }));
-    expect(positionKey(s)).not.toBe(positionKey({ ...s, hands: { ...s.hands, w: { ...s.hands.w, P: 1 } } }));
-    const q = fromDiagram(['k.....', '......', '..Q...', '......', '......', '.....K']);
-    const promoted = { ...q, board: q.board.map((p) => (p?.kind === 'Q' ? { ...p, promoted: true } : p)) };
-    expect(positionKey(q)).not.toBe(positionKey(promoted));
-  });
-
-  it('a knight shuffle cannot return to the starting position', () => {
-    // White Nb1-c3, Black Nb6-c4, White Nc3-b1: Black's Nc4-b6 would repeat the start.
-    const { s, seen } = playAll([mv(5, 1, 3, 2), mv(0, 1, 2, 2), mv(3, 2, 5, 1)]);
-    const back = mv(2, 2, 0, 1);
-    expect(moveTargets(s, square(2, 2), seen)).not.toContain(square(0, 1));
-    expect(isLegal(s, back, seen)).toBe(false);
-    expect(() => applyMove(s, back, seen)).toThrow();
-    // Without history, repetition isn't checked (the AI's search relies on this).
-    expect(isLegal(s, back)).toBe(true);
-  });
-
-  it('a player whose only moves repeat earlier positions has no legal move, and loses', () => {
-    // Walled-in Black whose single legal move is the pawn capture b4xc3.
-    const s0 = fromDiagram(['.....K', '......', 'pp....', 'kpN...', 'pppppp', 'rrrrrr'], 'w');
-    const kingMove = mv(0, 5, 0, 4);
-    const s1 = applyMove(s0, kingMove);
-    expect(allMoves(s1)).toEqual([mv(2, 1, 3, 2)]);
-    // Pretend the position after that capture has already happened.
-    const s2 = applyMove(s1, mv(2, 1, 3, 2));
-    const seen = new Set([positionKey(s0), positionKey(s2)]);
-    expect(hasLegalMove(s1, new Set([...seen, positionKey(s1)]))).toBe(false);
-    const result = applyMove(s0, kingMove, seen);
-    expect(result.winner).toBe('w');
-    expect(result.winBy).toBe('stuck');
   });
 });
 

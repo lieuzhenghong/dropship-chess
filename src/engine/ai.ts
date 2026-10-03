@@ -13,17 +13,7 @@
 // Root moves are shuffled first, so equally scored moves vary between games.
 // scripts/ai-match.ts measures this against the original fixed-depth AI.
 
-import {
-  allMoves,
-  applyMove,
-  type Colour,
-  type GameState,
-  HAND_KINDS,
-  type Kind,
-  type Move,
-  other,
-  type Seen,
-} from './rules';
+import { allMoves, applyMove, type Colour, type GameState, HAND_KINDS, type Kind, type Move, other } from './rules';
 
 const VALUE: Record<Kind, number> = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
 const WIN = 1000;
@@ -33,11 +23,6 @@ export interface SearchOptions {
   timeMs?: number;
   /** Never search deeper than this many plies. */
   maxDepth?: number;
-  /**
-   * Positions so far, so the AI's own move never repeats one (superko). Only
-   * the move it plays is checked; the search below ignores repetition.
-   */
-  seen?: Seen;
   rng?: () => number;
 }
 
@@ -103,7 +88,7 @@ export function chooseMove(state: GameState, opts: SearchOptions = {}): Move | n
     return best;
   }
 
-  let rootMoves = ordered(state, shuffle(allMoves(state, opts.seen), rng));
+  let rootMoves = ordered(state, shuffle(allMoves(state), rng));
   if (rootMoves.length === 0) return null;
   let best = rootMoves[0];
   for (let depth = 1; depth <= maxDepth; depth++) {
