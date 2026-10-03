@@ -6,6 +6,7 @@ import {
   inCheck,
   initialState,
   isLegal,
+  randomBackRank,
   moveTargets,
   type Piece,
   SQUARES,
@@ -29,18 +30,31 @@ function fromDiagram(rows: string[], turn: 'w' | 'b' = 'w'): GameState {
 const sorted = (xs: number[]) => [...xs].sort((a, b) => a - b);
 
 describe('initial position', () => {
-  it('matches the original layout', () => {
-    const s = initialState();
-    const kinds = (r: number) =>
-      Array.from({ length: 6 }, (_, c) => {
-        const p = s.board[square(r, c)]!;
-        return p.colour === 'w' ? p.kind : p.kind.toLowerCase();
-      }).join('');
-    expect(kinds(0)).toBe('rbqkbr');
-    expect(kinds(1)).toBe('pppppp');
-    expect(kinds(4)).toBe('PPPPPP');
-    expect(kinds(5)).toBe('RNQKNR');
+  const rankOf = (s: GameState, r: number) =>
+    Array.from({ length: 6 }, (_, c) => {
+      const p = s.board[square(r, c)]!;
+      return p.colour === 'w' ? p.kind : p.kind.toLowerCase();
+    }).join('');
+
+  it('mirrors the back rank for Black, behind a row of pawns each', () => {
+    const s = initialState(['B', 'R', 'K', 'N', 'Q', 'R']);
+    expect(rankOf(s, 0)).toBe('brknqr');
+    expect(rankOf(s, 1)).toBe('pppppp');
+    expect(rankOf(s, 4)).toBe('PPPPPP');
+    expect(rankOf(s, 5)).toBe('BRKNQR');
     expect(s.turn).toBe('w');
+  });
+
+  it('randomBackRank always deals R, R, Q, K, N, B and covers all 360 arrangements', () => {
+    let seed = 7;
+    const rng = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const seen = new Set<string>();
+    for (let i = 0; i < 20000; i++) {
+      const rank = randomBackRank(rng);
+      expect([...rank].sort().join('')).toBe('BKNQRR');
+      seen.add(rank.join(''));
+    }
+    expect(seen.size).toBe(360);
   });
 });
 
