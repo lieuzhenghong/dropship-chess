@@ -1,0 +1,546 @@
+import {
+  applyMove,
+  col,
+  type Colour,
+  dropTargets,
+  type GameState,
+  HAND_KINDS,
+  type HandKind,
+  inCheck,
+  initialState,
+  type Kind,
+  type Move,
+  moveTargets,
+  other,
+  row,
+  SIZE,
+  SQUARES,
+} from '../engine/rules';
+import { chooseMove } from '../engine/ai';
+import { connect, type ConnectionStatus, newGameId, type OnlineGame, SERVER_URL } from '../online';
+import { type GameResult, INCREMENT_MS, type RoomView } from '../protocol';
+import { type Palette, spriteUrl } from '../sprites/render';
+import { type History, type KeyValueStore, loadHistory, saveHistory } from '../storage';
+
+const PALETTE: Palette = { ink: '#263024', fill: '#f4efda' };
+const MAX_HISTORY = 400;
+const SEEN_HELP_KEY = 'dropship-chess:seen-help';
+const MODE_KEY = 'dropship-chess:mode';
+/** Pause before the computer moves, so its move is visible as a separate step. */
+const AI_DELAY_MS = 450;
+
+const NAMES: Record<Kind, string> = {
+  P: 'pawn', N: 'knight', B: 'bishop', R: 'rook', Q: 'queen', K: 'king',
+};
+const COLOUR_NAMES: Record<Colour, string> = { w: 'White', b: 'Black' };
+
+type Selection = { type: 'square'; sq: number } | { type: 'hand'; kind: HandKind } | null;
+
+const GAME_ID = /^[a-z0-9]{6,32}$/;
+
+/** m:ss, with tenths in the last ten seconds. */
+function formatClock(ms: number): string {
+  const t = Math.max(0, ms);
+  if (t < 10_000) return `0:0${(t / 1000).toFixed(1)}`;
+  const s = Math.ceil(t / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+const isDark = (sq: number) => (row(sq) + col(sq)) % 2 === 1;
+const squareName = (sq: number) => `${'abcdef'[col(sq)]}${SIZE - row(sq)}`;
+
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  props: Partial<HTMLElementTagNameMap[K]> = {},
+  ...children: (Node | string)[]
+): HTMLElementTagNameMap[K] {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+
+export function mountApp(root: HTMLElement, store: KeyValueStore): void {
+  let history: History = loadHistory(store) ?? [initialState()];
+  let selection: Selection = null;
+  let cursor = SQUARES - 3; // keyboard cursor starts on White's King
+  let showCursor = false;
+  /** Which colour the computer plays, or null for two players. */
+  let aiColour: Colour | null = (() => {
+    const m = store.get(MODE_KEY);
+    return m === 'w' || m === 'b' ? m : null;
+  })();
+  let aiTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Set while playing online; the server's snapshot replaces local history. */
+  let online: {
+    id: string;
+    conn: OnlineGame;
+    view: RoomView | null;
+    /** Local time `view` arrived, for counting down the running clock. */
+    receivedAt: number;
+    status: ConnectionStatus;
+    flagClaimed: boolean;
+  } | null = null;
+
+  const current = (): GameState =>
+    online ? (online.view?.game ?? initialState()) : history[history.length - 1];
+  const aiToMove = () =>
+    !online && aiColour !== null && current().turn === aiColour && !current().winner;
+  /** Whether the person at this device may move now. */
+  const canAct = (): boolean => {
+    if (!online) return !current().winner && !aiToMove();
+    const v = online.view;
+    return !!v && v.you !== null && v.running === v.you && online.status === 'open';
+  };
+  const result = (): GameResult | null => {
+    if (online) return online.view?.result ?? null;
+    const w = current().winner;
+    return w ? { winner: w, reason: 'king' } : null;
+  };
+  /** Clocks as they stand now, counting down the running side locally. */
+  const liveClocks = (): Record<Colour, number> | null => {
+    const v = online?.view;
+    if (!v) return null;
+    const clocks = { ...v.clocks };
+    if (v.running) clocks[v.running] -= Date.now() - online!.receivedAt;
+    return clocks;
+  };
+
+  // ---- DOM ----
+  const undoBtn = el('button', { className: 'icon-btn', textContent: 'Undo', type: 'button' });
+  const newBtn = el('button', { className: 'icon-btn', textContent: 'New', type: 'button' });
+  const helpBtn = el('button', { className: 'icon-btn', textContent: '?', type: 'button' });
+  helpBtn.setAttribute('aria-label', 'How to play');
+  const header = el(
+    'header',
+    { className: 'bar' },
+    el('h1', {}, 'Dropship Chess'),
+    el('div', { className: 'actions' }, undoBtn, newBtn, helpBtn),
+  );
+
+  const boardEl = el('div', { className: 'board' });
+  boardEl.setAttribute('role', 'group');
+  boardEl.setAttribute('aria-label', 'Board');
+  const cells: HTMLButtonElement[] = [];
+  const pieces: HTMLSpanElement[] = [];
+  for (let sq = 0; sq < SQUARES; sq++) {
+    const piece = el('span', { className: 'piece' });
+    const cell = el(
+      'button',
+      { type: 'button', className: `cell ${isDark(sq) ? 'dark' : 'light'}` },
+      piece,
+    );
+    cell.dataset.sq = String(sq);
+    cells.push(cell);
+    pieces.push(piece);
+    boardEl.append(cell);
+  }
+
+  const makeHand = (colour: Colour) => {
+    const slots = new Map<HandKind, { btn: HTMLButtonElement; count: HTMLSpanElement }>();
+    const section = el('section', { className: `hand hand-${colour}` });
+    const title = el('h2');
+    const clock = el('span', { className: 'clock' });
+    section.append(el('div', { className: 'hand-head' }, title, clock));
+    const list = el('div', { className: 'slots' });
+    HAND_KINDS.forEach((kind, i) => {
+      const count = el('span', { className: 'count' });
+      const btn = el(
+        'button',
+        { type: 'button', className: 'slot' },
+        el('img', { src: spriteUrl(colour, kind, PALETTE), alt: '', draggable: false }),
+        count,
+      );
+      btn.dataset.kind = kind;
+      btn.dataset.colour = colour;
+      btn.title = `${NAMES[kind]} (key ${i + 1})`;
+      slots.set(kind, { btn, count });
+      list.append(btn);
+    });
+    section.append(list);
+    return { section, slots, title, clock };
+  };
+  const hands = { b: makeHand('b'), w: makeHand('w') };
+
+  const status = el('p', { className: 'status' });
+  status.setAttribute('role', 'status');
+  const shareBtn = el('button', { className: 'icon-btn share', type: 'button', textContent: 'Share invite link' });
+  shareBtn.hidden = true;
+
+  const helpDialog = el('dialog', { className: 'sheet' });
+  helpDialog.innerHTML = `
+    <h2>Dropship Chess</h2>
+    <p class="byline">A better “Really Bad Chess”, originally by
+      <a href="https://github.com/lieuzhenghong/nand2tetris-dropship-chess"
+         target="_blank" rel="noopener">@lieuzhenghong</a> for nand2tetris.</p>
+    <ul>
+      <li>Chess on a 6×6 board. White starts with knights, Black with bishops.</li>
+      <li>Capture a piece and it joins your <b>dropships</b>. On your turn you may
+        drop it onto any empty square instead of moving.</li>
+      <li>Win by <b>capturing the King</b>. There’s no checkmate, and nothing
+        stops you walking into check, so watch out.</li>
+      <li>Pawns move one square, never two. A pawn that reaches the far rank becomes a
+        Queen, and turns back into a pawn if it’s captured. No castling, no en passant.</li>
+      <li>Pawns can’t be dropped onto the far rank.</li>
+      <li>Tap <b>New</b> to play two players on one device, against the computer${
+        SERVER_URL ? ', or online against a friend (3 minutes each, plus 2 seconds per move)' : ''}.</li>
+    </ul>
+    <p class="keys">Keyboard: arrows move, Space selects, Esc cancels, 1–5 pick a dropship,
+      U undoes.</p>
+    <form method="dialog"><button class="primary">Play</button></form>`;
+
+  const confirmDialog = el('dialog', { className: 'sheet' });
+  confirmDialog.innerHTML = `
+    <h2>New game</h2>
+    <p class="warn">The current game will be lost.</p>
+    <form method="dialog" class="stack">
+      <button value="pvp" class="primary">2 players, one device</button>
+      <button value="b" class="primary">vs computer: you’re White</button>
+      <button value="w" class="primary">vs computer: you’re Black</button>${
+        SERVER_URL ? '<button value="online" class="primary">Online: invite a friend</button>' : ''}
+      <button value="cancel">Cancel</button>
+    </form>`;
+  const warn = confirmDialog.querySelector<HTMLElement>('.warn')!;
+
+  const gameEl = el('main', { className: 'game' }, hands.b.section, boardEl, hands.w.section);
+  root.replaceChildren(
+    header,
+    el('div', { className: 'stage' }, gameEl, status, shareBtn),
+    helpDialog,
+    confirmDialog,
+  );
+
+  // ---- State transitions ----
+  const commit = (next: GameState) => {
+    history = [...history, next].slice(-MAX_HISTORY);
+    selection = null;
+    saveHistory(store, history);
+  };
+
+  const targets = (): number[] => {
+    const s = current();
+    if (!selection) return [];
+    return selection.type === 'square'
+      ? moveTargets(s, selection.sq)
+      : dropTargets(s, selection.kind);
+  };
+
+  const activateSquare = (sq: number) => {
+    const s = current();
+    if (!canAct()) return;
+    if (selection && targets().includes(sq)) {
+      const move: Move =
+        selection.type === 'square'
+          ? { type: 'move', from: selection.sq, to: sq }
+          : { type: 'drop', kind: selection.kind, to: sq };
+      if (online?.view) {
+        // Show the move straight away; the server's next snapshot is authoritative.
+        const next = applyMove(s, move);
+        const clocks = liveClocks()!;
+        clocks[s.turn] += INCREMENT_MS;
+        online.view = {
+          ...online.view,
+          game: next,
+          clocks,
+          running: next.winner ? null : next.turn,
+        };
+        online.receivedAt = Date.now();
+        online.conn.sendMove(move);
+        selection = null;
+      } else {
+        commit(applyMove(s, move));
+      }
+    } else if (s.board[sq]?.colour === s.turn &&
+               !(selection?.type === 'square' && selection.sq === sq)) {
+      selection = { type: 'square', sq };
+    } else {
+      selection = null;
+    }
+    render();
+  };
+
+  const activateHand = (colour: Colour, kind: HandKind) => {
+    const s = current();
+    if (!canAct() || colour !== s.turn || s.hands[colour][kind] <= 0) return;
+    selection =
+      selection?.type === 'hand' && selection.kind === kind ? null : { type: 'hand', kind };
+    render();
+  };
+
+  const undo = () => {
+    if (undoBtn.disabled) return; // same rule as the button (keyboard U bypasses it)
+    clearTimeout(aiTimer);
+    history = history.slice(0, -1);
+    // Against the computer, step back to the human's previous turn.
+    while (history.length > 1 && aiToMove()) history = history.slice(0, -1);
+    selection = null;
+    saveHistory(store, history);
+    render();
+  };
+
+  const leaveOnline = () => {
+    if (!online) return;
+    online.conn.close();
+    online = null;
+    const url = new URL(location.href);
+    url.searchParams.delete('game');
+    window.history.replaceState(null, '', url);
+  };
+
+  const startOnline = (id: string) => {
+    leaveOnline();
+    clearTimeout(aiTimer);
+    selection = null;
+    const url = new URL(location.href);
+    url.searchParams.set('game', id);
+    window.history.replaceState(null, '', url);
+    online = {
+      id,
+      view: null,
+      receivedAt: 0,
+      status: 'connecting',
+      flagClaimed: false,
+      conn: connect(id, store, {
+        onState(view, receivedAt) {
+          if (!online) return;
+          online.view = view;
+          online.receivedAt = receivedAt;
+          online.flagClaimed = false;
+          // Drop a selection the new position no longer supports.
+          if (!canAct()) selection = null;
+          render();
+        },
+        onStatus(st) {
+          if (!online) return;
+          online.status = st;
+          render();
+        },
+        onError(message) {
+          console.warn('server:', message);
+        },
+      }),
+    };
+    render();
+  };
+
+  const newGame = (ai: Colour | null) => {
+    leaveOnline();
+    clearTimeout(aiTimer);
+    aiColour = ai;
+    store.set(MODE_KEY, ai ?? 'pvp');
+    history = [initialState()];
+    selection = null;
+    saveHistory(store, history);
+    render();
+  };
+
+  /** Schedules the computer's move if it's its turn. Called after every render. */
+  const maybePlayAi = () => {
+    clearTimeout(aiTimer);
+    if (!aiToMove()) return;
+    aiTimer = setTimeout(() => {
+      if (!aiToMove()) return;
+      const move = chooseMove(current());
+      if (!move) return;
+      commit(applyMove(current(), move));
+      render();
+    }, AI_DELAY_MS);
+  };
+
+  // ---- Rendering ----
+  function render() {
+    const s = current();
+    const t = new Set(targets());
+    const last = s.lastMove;
+    const checked = (['w', 'b'] as const).filter((c) => !s.winner && inCheck(s, c));
+
+    cells.forEach((cell, sq) => {
+      const p = s.board[sq];
+      pieces[sq].style.backgroundImage = p ? `url(${spriteUrl(p.colour, p.kind, PALETTE)})` : '';
+      const cl = cell.classList;
+      cl.toggle('selected', selection?.type === 'square' && selection.sq === sq);
+      cl.toggle('target', t.has(sq) && !p);
+      cl.toggle('capture', t.has(sq) && !!p);
+      cl.toggle('last', !!last && (last.to === sq || (last.type === 'move' && last.from === sq)));
+      cl.toggle('check', !!p && p.kind === 'K' && checked.includes(p.colour));
+      cl.toggle('cursor', showCursor && cursor === sq);
+      cell.setAttribute('aria-label', `${squareName(sq)}${
+        p ? `, ${COLOUR_NAMES[p.colour].toLowerCase()} ${NAMES[p.kind]}` : ''
+      }${t.has(sq) ? ', legal move' : ''}`);
+    });
+
+    const view = online?.view ?? null;
+    const you = view?.you ?? null;
+    const res = result();
+    const flipped = you === 'b';
+    boardEl.classList.toggle('flipped', flipped);
+    gameEl.classList.toggle('flipped', flipped);
+
+    (['w', 'b'] as const).forEach((colour) => {
+      const { section, slots, title } = hands[colour];
+      section.classList.toggle('active', online ? view?.running === colour : !res && s.turn === colour);
+      if (online && you) {
+        title.textContent = colour === you ? 'Your dropships' : 'Opponent’s dropships';
+      } else {
+        title.textContent =
+          aiColour === null || online ? `${COLOUR_NAMES[colour]}’s dropships`
+          : colour === aiColour ? 'Computer’s dropships' : 'Your dropships';
+      }
+      for (const [kind, { btn, count }] of slots) {
+        const n = s.hands[colour][kind];
+        count.textContent = n > 1 ? `×${n}` : '';
+        btn.disabled = n === 0;
+        btn.classList.toggle('selected', selection?.type === 'hand' &&
+          selection.kind === kind && s.turn === colour);
+        btn.setAttribute('aria-label',
+          `${COLOUR_NAMES[colour]} ${NAMES[kind]} dropship, ${n} available`);
+      }
+    });
+
+    renderClocks();
+    const score = res?.winner === 'w' ? '1–0' : '0–1';
+    shareBtn.hidden = true;
+    if (online) {
+      const opp = you ? other(you) : null;
+      const how = res?.reason === 'time' ? 'on time' : 'by capturing the King';
+      if (!view) {
+        status.textContent = 'Connecting…';
+      } else if (res) {
+        status.textContent = you
+          ? `${res.winner === you ? 'You win' : 'You lose'} ${how}, ${score}`
+          : `${COLOUR_NAMES[res.winner]} wins ${how}, ${score}`;
+      } else if (!view.running) {
+        status.textContent = 'Waiting for your opponent to open the link…';
+        shareBtn.hidden = you !== 'w';
+      } else if (!you) {
+        status.textContent = `Watching · ${COLOUR_NAMES[s.turn]} to move`;
+      } else {
+        status.textContent = `${view.running === you ? 'Your move' : 'Opponent’s move'}${
+          view.running === you && checked.includes(you) ? ' · your King is under attack' : ''
+        }${opp && !view.connected[opp] ? ' · opponent offline' : ''}`;
+      }
+      if (online.status !== 'open' && view) status.textContent += ' · reconnecting…';
+    } else if (s.winner && aiColour !== null) {
+      status.textContent = `${s.winner === aiColour ? 'Computer wins' : 'You win'}, ${score}`;
+    } else if (s.winner) {
+      status.textContent = `${COLOUR_NAMES[s.winner]} wins, ${score}`;
+    } else if (aiToMove()) {
+      status.textContent = 'Computer is thinking…';
+    } else {
+      status.textContent = `${aiColour === null ? `${COLOUR_NAMES[s.turn]} to move` : 'Your move'}${
+        checked.includes(s.turn) ? ' · your King is under attack' : ''
+      }`;
+    }
+    status.classList.toggle('over', !!res);
+    // With the computer as White, undoing its opening move would just replay it.
+    undoBtn.disabled = !!online || history.length <= (aiColour === 'w' ? 2 : 1);
+    document.body.dataset.turn = s.turn;
+    maybePlayAi();
+  }
+
+  /** Updates the clock readouts; also asks the server to call a flag we can see. */
+  function renderClocks() {
+    const clocks = liveClocks();
+    const running = online?.view?.running ?? null;
+    for (const colour of ['w', 'b'] as const) {
+      const { clock } = hands[colour];
+      clock.hidden = !clocks;
+      if (!clocks) continue;
+      clock.textContent = formatClock(clocks[colour]);
+      clock.classList.toggle('running', running === colour);
+      clock.classList.toggle('low', clocks[colour] < 20_000);
+    }
+    if (online && clocks && running && clocks[running] <= 0 && !online.flagClaimed) {
+      online.flagClaimed = true;
+      online.conn.claimFlag();
+    }
+  }
+  setInterval(() => {
+    if (online?.view?.running) renderClocks();
+  }, 100);
+
+  // ---- Input ----
+  boardEl.addEventListener('click', (e) => {
+    const cell = (e.target as HTMLElement).closest<HTMLButtonElement>('.cell');
+    if (!cell) return;
+    // Pointer clicks hide the keyboard cursor; keyboard "clicks" have detail 0.
+    showCursor = e.detail === 0;
+    cursor = Number(cell.dataset.sq);
+    activateSquare(cursor);
+  });
+  for (const colour of ['w', 'b'] as const) {
+    hands[colour].section.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.slot');
+      if (btn) activateHand(colour, btn.dataset.kind as HandKind);
+    });
+  }
+  undoBtn.addEventListener('click', undo);
+  helpBtn.addEventListener('click', () => helpDialog.showModal());
+  shareBtn.addEventListener('click', async () => {
+    const url = location.href;
+    try {
+      if (navigator.share) await navigator.share({ title: 'Dropship Chess', text: 'Play me at Dropship Chess', url });
+      else {
+        await navigator.clipboard.writeText(url);
+        shareBtn.textContent = 'Link copied';
+        setTimeout(() => (shareBtn.textContent = 'Share invite link'), 2000);
+      }
+    } catch {
+      // Share sheet dismissed, or clipboard blocked: the link is still in the address bar.
+    }
+  });
+  newBtn.addEventListener('click', () => {
+    warn.textContent = online ? 'You’ll leave this online game.' : 'The current game will be lost.';
+    warn.hidden = online ? !!result() : history.length <= 1 || !!current().winner;
+    confirmDialog.returnValue = '';
+    confirmDialog.showModal();
+  });
+  confirmDialog.addEventListener('close', () => {
+    const v = confirmDialog.returnValue;
+    if (v === 'online') startOnline(newGameId());
+    else if (v === 'pvp') newGame(null);
+    else if (v === 'w' || v === 'b') newGame(v);
+  });
+  helpDialog.addEventListener('close', () => store.set(SEEN_HELP_KEY, '1'));
+
+  // Keyboard controls, after the original's (arrows / space / escape / numbers).
+  document.addEventListener('keydown', (e) => {
+    if (helpDialog.open || confirmDialog.open || e.metaKey || e.ctrlKey || e.altKey) return;
+    const move = (dr: number, dc: number) => {
+      if (boardEl.classList.contains('flipped')) [dr, dc] = [-dr, -dc];
+      const r = (row(cursor) + dr + SIZE) % SIZE;
+      const c = (col(cursor) + dc + SIZE) % SIZE;
+      cursor = r * SIZE + c;
+      showCursor = true;
+      cells[cursor].focus({ preventScroll: true });
+      render();
+    };
+    switch (e.key) {
+      case 'ArrowUp': move(-1, 0); break;
+      case 'ArrowDown': move(1, 0); break;
+      case 'ArrowLeft': move(0, -1); break;
+      case 'ArrowRight': move(0, 1); break;
+      case ' ':
+      case 'Enter':
+        // A focused button (a board cell after arrow keys, or Undo etc.) gets
+        // its native click instead, which avoids activating twice.
+        if (document.activeElement instanceof HTMLButtonElement) return;
+        showCursor = true;
+        activateSquare(cursor);
+        break;
+      case 'Escape': selection = null; render(); break;
+      case 'u': case 'U': undo(); break;
+      default: {
+        const i = Number(e.key) - 1;
+        if (i >= 0 && i < HAND_KINDS.length) activateHand(current().turn, HAND_KINDS[i]);
+        else return;
+      }
+    }
+    e.preventDefault();
+  });
+
+  const linkedGame = new URLSearchParams(location.search).get('game');
+  if (SERVER_URL && linkedGame && GAME_ID.test(linkedGame)) startOnline(linkedGame);
+  else render();
+  if (!store.get(SEEN_HELP_KEY)) helpDialog.showModal();
+}

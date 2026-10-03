@@ -1,0 +1,21 @@
+name = "dropship-chess"
+main = "server/src/index.ts"
+compatibility_date = "2026-09-01"
+
+[[durable_objects.bindings]]
+name = "GAME"
+class_name = "Game"
+
+# SQLite-backed Durable Objects are the kind available on the free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Game"]
+
+# Settings for `wrangler preview`, which Cloudflare's Git integration runs for
+# non-production branches. Each preview gets its own isolated Game namespace,
+# so preview games never touch production ones.
+[previews]
+
+[[previews.durable_objects.bindings]]
+name = "GAME"
+class_name = "Game"
