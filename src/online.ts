@@ -31,14 +31,29 @@ function randomId(length: number): string {
 
 export const newGameId = (): string => randomId(10);
 
+const TOKEN_PREFIX = 'dropship-chess:online:';
+const TOKEN_INDEX = 'dropship-chess:online-games';
+/** How many games' tokens to keep; older ones can no longer be rejoined. */
+const MAX_TOKENS = 20;
+
 /** The player's secret for a game, created on first visit and reused on reconnect. */
 function playerToken(store: KeyValueStore, gameId: string): string {
-  const key = `dropship-chess:online:${gameId}`;
-  let token = store.get(key);
+  let token = store.get(TOKEN_PREFIX + gameId);
   if (!token) {
     token = randomId(24);
-    store.set(key, token);
+    store.set(TOKEN_PREFIX + gameId, token);
   }
+  // Keep a most-recent-last list of games and forget the oldest tokens.
+  let ids: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(store.get(TOKEN_INDEX) ?? '[]');
+    if (Array.isArray(parsed)) ids = parsed.filter((x): x is string => typeof x === 'string');
+  } catch {
+    // Start a fresh list.
+  }
+  ids = [...ids.filter((id) => id !== gameId), gameId];
+  for (const old of ids.splice(0, Math.max(0, ids.length - MAX_TOKENS))) store.remove(TOKEN_PREFIX + old);
+  store.set(TOKEN_INDEX, JSON.stringify(ids));
   return token;
 }
 

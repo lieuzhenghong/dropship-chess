@@ -63,20 +63,27 @@ last move together with its reply.
 ## Online play
 
 Choose **New → Online: invite a friend** and send the link. Whoever opens it
-plays Black; the clocks (3 minutes each, plus 2 seconds per move) start once both players
-are connected. A clock reaching zero loses, as does losing your King. Reloading
-or losing your connection rejoins the same game: each browser keeps a secret
-per-game token in `localStorage`. Anyone else who opens the link can watch.
+plays Black. The time control is 3+2: 3 minutes each, plus 2 seconds per move.
+As on most chess sites, each side's first move is untimed but must be made
+within 30 seconds, or the game is aborted with no result; the clocks start
+after Black's first move. A clock reaching zero loses, as does losing your
+King. Reloading or losing your connection rejoins the same game: each browser
+keeps a secret per-game token in `localStorage`, pruned to the 20 most recent
+games. Anyone else who opens the link can watch.
 
 The server (`server/`) is a Cloudflare Worker with one
 [Durable Object](https://developers.cloudflare.com/durable-objects/) per game.
 It validates every move with the same rules engine, `src/engine/rules.ts`, and
-keeps the clocks. It never runs a timer: when a player's clock shows 0:00, the
-opponent's app asks the server to check, and the server confirms against its own
-timestamps. The game logic is in `server/src/room.ts`, with unit tests.
+keeps the clocks. It runs no timers: the clocks and the first-move deadline
+are checked whenever a message arrives, and when a deadline passes the waiting
+player's app asks the server to check. A game both players have left stays
+unresolved until someone reopens the link, which resolves it immediately.
+Games are kept indefinitely, as a record for replays or stats later; at a few
+KB each, storage isn't a concern. The
+game logic is in `server/src/room.ts`, with unit tests.
 
 Deliberately left out: accounts, matchmaking, rematch and resign buttons,
-chat, lag compensation, and a configurable time control (it's two constants
+chat, lag compensation, server-side timers, and a configurable time control (it's two constants
 in `src/protocol.ts`).
 
 ```sh

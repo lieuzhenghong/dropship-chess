@@ -4,12 +4,23 @@
 //
 // The object stores a `Room` (see room.ts) and uses the WebSocket Hibernation
 // API, so it can be evicted from memory between moves without dropping the
-// players' connections.
+// players' connections. It runs no timers: deadlines are checked whenever a
+// message arrives.
 
 import { DurableObject } from 'cloudflare:workers';
 import type { Colour } from '../../src/engine/rules';
 import type { ClientMessage, ServerMessage } from '../../src/protocol';
-import { checkFlag, clocksAt, join, move, newRoom, type Room, runningClock } from './room';
+import {
+  checkTimeouts,
+  clocksAt,
+  isStarted,
+  join,
+  move,
+  newRoom,
+  type Room,
+  runningClock,
+  upgradeRoom,
+} from './room';
 
 interface Env {
   GAME: DurableObjectNamespace<Game>;
@@ -49,7 +60,7 @@ export class Game extends DurableObject<Env> {
     }
     const now = Date.now();
     const before = await this.load();
-    let room = checkFlag(before, now);
+    let room = checkTimeouts(before, now);
     const { seat } = ws.deserializeAttachment() as Attachment;
 
     switch (msg.t) {
@@ -69,7 +80,7 @@ export class Game extends DurableObject<Env> {
         break;
       }
       case 'flag':
-        break; // checkFlag above already did the work
+        break; // checkTimeouts above already did the work
       default:
         return this.send(ws, { t: 'error', message: 'Unknown message.' });
     }
@@ -85,11 +96,13 @@ export class Game extends DurableObject<Env> {
     } catch {
       // Already closed.
     }
-    this.broadcast(await this.load(), Date.now(), ws);
+    const stored = await this.ctx.storage.get<Room>('room');
+    if (stored) this.broadcast(upgradeRoom(stored), Date.now(), ws);
   }
 
   private async load(): Promise<Room> {
-    return (await this.ctx.storage.get<Room>('room')) ?? newRoom();
+    const stored = await this.ctx.storage.get<Room>('room');
+    return stored ? upgradeRoom(stored) : newRoom();
   }
 
   private send(ws: WebSocket, msg: ServerMessage): void {
@@ -105,13 +118,16 @@ export class Game extends DurableObject<Env> {
     const seats = sockets.map((s) => (s.deserializeAttachment() as Attachment).seat);
     const connected = { w: seats.includes('w'), b: seats.includes('b') };
     const clocks = clocksAt(room, now);
+    const abortIn = room.abortAt !== null && !room.result ? Math.max(0, room.abortAt - now) : null;
     sockets.forEach((s, i) =>
       this.send(s, {
         t: 'state',
         you: seats[i],
         game: room.game,
+        started: isStarted(room),
         clocks,
         running: runningClock(room),
+        abortIn,
         connected,
         result: room.result,
       }),
