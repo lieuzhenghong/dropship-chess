@@ -59,15 +59,34 @@ Changes from the original Jack version:
 
 ## Computer opponent
 
-Choose "vs computer" under **New**; you get a random colour. It's meant as something to test against,
-not a strong player: `src/engine/ai.ts` runs a three-ply negamax search with
-alpha-beta pruning (its move, your reply, its next move) and scores positions
-by material only, counting pieces in hand. It takes free pieces, captures the
-King when it can, and avoids the most obvious blunders, but it has no
-positional sense and can't see beyond three plies. Equal moves are chosen at
-random. It runs on the main thread, taking a few milliseconds per move on a
-laptop, so no worker is needed yet. Against the computer, Undo takes back your
-last move together with its reply.
+Choose "vs computer" under **New**; you get a random colour. It's meant as
+something to test against, not a strong player. `src/engine/ai.ts` is a
+negamax search with alpha-beta pruning:
+
+- **Iterative deepening:** it searches 1 ply ahead, then 2, 3, and so on,
+  until a 250 ms budget runs out, and plays the best move from the deepest
+  completed search. Faster devices see further ahead.
+- **Move ordering:** captures first (most valuable victim, then least valuable
+  attacker), with the previous iteration's best move first. This makes the
+  pruning much more effective, which pays for the extra depth.
+- **Evaluation:** material only, counting pieces in hand. I also tried a
+  bonus for pieces in hand and one for advanced pawns. `ai:match` showed no
+  measurable gain (88% vs 90%, within noise), so they were left out.
+
+It has no positional understanding. Equal moves are chosen at
+random. Against the computer, Undo takes back your last move together with
+its reply.
+
+To measure a change, `npm run ai:match -- [pairs] [timeMs]` plays the current
+AI against the original fixed 3-ply, material-only one
+(`scripts/ai-baseline.ts`). Each shuffled start is played twice with colours
+swapped, and it reports the score with a 95% confidence interval.
+
+Result at the time of writing (100 starts × both colours, new AI at 50 ms per
+move on a laptop, a fifth of its in-app budget): the new AI scored
+**90% ± 4%**, winning 180 games and losing 20. At about the same search depth
+as the old AI (5 ms per move) the two are even, so the gain comes from
+searching deeper, not from the evaluation.
 
 ## Online play
 
@@ -128,7 +147,7 @@ Tab and Enter work too.)
 ```
 src/
   engine/rules.ts       pure, immutable rules engine (no DOM), plus tests
-  engine/ai.ts          computer opponent (negamax + alpha-beta, material eval)
+  engine/ai.ts          computer opponent (iterative-deepening negamax + alpha-beta)
   protocol.ts           client/server message types
   online.ts             WebSocket client with auto-reconnect
   sprites/data.ts       generated from SpriteSheet.jack
@@ -140,6 +159,7 @@ server/
   src/room.ts           authoritative game + clock logic (pure, tested)
   src/index.ts          Worker entry + Durable Object (one per game)
 scripts/
+  ai-match.ts           new AI vs the original (scripts/ai-baseline.ts): npm run ai:match
   extract-sprites.mjs   node scripts/extract-sprites.mjs path/to/SpriteSheet.jack
   make-icons.mjs        regenerates public/icon*.{svg,png}
 ```

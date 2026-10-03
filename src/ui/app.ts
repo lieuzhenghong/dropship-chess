@@ -30,8 +30,11 @@ const PALETTE: Palette = { ink: '#263024', fill: '#f4efda' };
 const MAX_HISTORY = 400;
 const SEEN_HELP_KEY = 'dropship-chess:seen-help';
 const MODE_KEY = 'dropship-chess:mode';
-/** Pause before the computer moves, so its move is visible as a separate step. */
-const AI_DELAY_MS = 450;
+/**
+ * Pause before the computer starts thinking, so your move's animation can
+ * finish first. Its search then takes up to 250 ms more.
+ */
+const AI_DELAY_MS = 200;
 
 const NAMES: Record<Kind, string> = {
   P: 'pawn', N: 'knight', B: 'bishop', R: 'rook', Q: 'queen', K: 'king',
