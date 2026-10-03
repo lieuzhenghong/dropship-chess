@@ -145,6 +145,12 @@ Tap a piece, then tap a highlighted square. To drop, tap a piece in your
 dropships, then an empty square. (Squares and buttons are ordinary buttons, so
 Tab and Enter work too.)
 
+Moves play short synthesised sounds, and the speaker button mutes them. On
+Chromium-based browsers (Chrome, Samsung Internet, Edge) the phone also
+vibrates, with a stronger buzz when your opponent or the computer moves. Safari
+and Firefox (since version 129) don't support web vibration at all, so there
+it's sound only until the game is wrapped as a native app.
+
 ## Layout
 
 ```
