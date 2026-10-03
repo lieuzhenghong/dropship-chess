@@ -2,7 +2,7 @@
 // tested. The server is authoritative for moves and clocks.
 
 import { applyMove, type Colour, type GameState, initialState, isLegal, type Move, other } from '../../src/engine/rules';
-import { type GameResult, INITIAL_CLOCK_MS } from '../../src/protocol';
+import { type GameResult, INCREMENT_MS, INITIAL_CLOCK_MS } from '../../src/protocol';
 
 export interface Room {
   readonly tokens: Readonly<Partial<Record<Colour, string>>>;
@@ -71,6 +71,7 @@ export function move(room: Room, seat: Colour | null, mv: Move, now: number): Ou
 
   const game = applyMove(room.game, mv);
   const clocks = clocksAt(room, now);
+  clocks[seat] += INCREMENT_MS;
   const result: GameResult | null = game.winner ? { winner: game.winner, reason: 'king' } : null;
   return { room: { ...room, game, clocks, turnStart: result ? null : now, result } };
 }

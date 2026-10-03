@@ -18,7 +18,7 @@ import {
 } from '../engine/rules';
 import { chooseMove } from '../engine/ai';
 import { connect, type ConnectionStatus, newGameId, type OnlineGame, SERVER_URL } from '../online';
-import type { GameResult, RoomView } from '../protocol';
+import { type GameResult, INCREMENT_MS, type RoomView } from '../protocol';
 import { type Palette, spriteUrl } from '../sprites/render';
 import { type History, type KeyValueStore, loadHistory, saveHistory } from '../storage';
 
@@ -183,7 +183,7 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
         Queen, and turns back into a pawn if it’s captured. No castling, no en passant.</li>
       <li>Pawns can’t be dropped onto the far rank.</li>
       <li>Tap <b>New</b> to play two players on one device, against the computer${
-        SERVER_URL ? ', or online against a friend (3 minutes each)' : ''}.</li>
+        SERVER_URL ? ', or online against a friend (3 minutes each, plus 2 seconds per move)' : ''}.</li>
     </ul>
     <p class="keys">Keyboard: arrows move, Space selects, Esc cancels, 1–5 pick a dropship,
       U undoes.</p>
@@ -236,10 +236,12 @@ export function mountApp(root: HTMLElement, store: KeyValueStore): void {
       if (online?.view) {
         // Show the move straight away; the server's next snapshot is authoritative.
         const next = applyMove(s, move);
+        const clocks = liveClocks()!;
+        clocks[s.turn] += INCREMENT_MS;
         online.view = {
           ...online.view,
           game: next,
-          clocks: liveClocks()!,
+          clocks,
           running: next.winner ? null : next.turn,
         };
         online.receivedAt = Date.now();

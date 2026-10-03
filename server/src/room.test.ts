@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { square } from '../../src/engine/rules';
-import { INITIAL_CLOCK_MS } from '../../src/protocol';
+import { INCREMENT_MS, INITIAL_CLOCK_MS } from '../../src/protocol';
 import { checkFlag, clocksAt, join, move, newRoom, type Room, runningClock } from './room';
 
 const e2e3 = { type: 'move', from: square(4, 4), to: square(3, 4) } as const;
@@ -38,14 +38,23 @@ describe('move', () => {
     expect(move(r, 'w', { type: 'move', from: square(4, 4), to: square(2, 4) }, 1).error).toMatch(/Illegal/);
   });
 
-  it('charges the mover for the time taken and starts the other clock', () => {
+  it('charges the mover for the time taken, adds the increment, and starts the other clock', () => {
     let r = started(0);
     r = move(r, 'w', e2e3, 10_000).room;
-    expect(r.clocks.w).toBe(INITIAL_CLOCK_MS - 10_000);
+    expect(r.clocks.w).toBe(INITIAL_CLOCK_MS - 10_000 + INCREMENT_MS);
     expect(r.game.turn).toBe('b');
     expect(clocksAt(r, 14_000).b).toBe(INITIAL_CLOCK_MS - 4_000);
     r = move(r, 'b', b5b4, 15_000).room;
-    expect(r.clocks).toEqual({ w: INITIAL_CLOCK_MS - 10_000, b: INITIAL_CLOCK_MS - 5_000 });
+    expect(r.clocks).toEqual({
+      w: INITIAL_CLOCK_MS - 10_000 + INCREMENT_MS,
+      b: INITIAL_CLOCK_MS - 5_000 + INCREMENT_MS,
+    });
+  });
+
+  it('the increment can take a clock above its starting time', () => {
+    let r = started(0);
+    r = move(r, 'w', e2e3, 500).room;
+    expect(r.clocks.w).toBe(INITIAL_CLOCK_MS + INCREMENT_MS - 500);
   });
 
   it('a move after the clock ran out loses on time instead', () => {

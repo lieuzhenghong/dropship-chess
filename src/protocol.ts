@@ -4,6 +4,8 @@ import type { Colour, GameState, Move } from './engine/rules';
 
 /** Time each player starts with. */
 export const INITIAL_CLOCK_MS = 3 * 60 * 1000;
+/** Time added to a player's clock after each of their moves (3+2). */
+export const INCREMENT_MS = 2 * 1000;
 
 export type ClientMessage =
   /** Sent on every (re)connect. `token` identifies the player across reconnects. */

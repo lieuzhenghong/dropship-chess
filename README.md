@@ -6,7 +6,7 @@ back onto any empty square. White starts with knights and Black with bishops,
 so you have to capture the other side's minor pieces to get them.
 
 Two players on one device, against a rudimentary computer opponent, or online
-against a friend with a 3-minute clock.
+against a friend with a 3+2 clock.
 Touch-first, and it also works with a keyboard. The
 pieces are the original 32×32 1-bit sprites, extracted from `SpriteSheet.jack`.
 
@@ -63,7 +63,7 @@ last move together with its reply.
 ## Online play
 
 Choose **New → Online: invite a friend** and send the link. Whoever opens it
-plays Black; the clocks (3 minutes each, no increment) start once both players
+plays Black; the clocks (3 minutes each, plus 2 seconds per move) start once both players
 are connected. A clock reaching zero loses, as does losing your King. Reloading
 or losing your connection rejoins the same game: each browser keeps a secret
 per-game token in `localStorage`. Anyone else who opens the link can watch.
@@ -76,7 +76,8 @@ opponent's app asks the server to check, and the server confirms against its own
 timestamps. The game logic is in `server/src/room.ts`, with unit tests.
 
 Deliberately left out: accounts, matchmaking, rematch and resign buttons,
-chat, lag compensation, and a configurable time control.
+chat, lag compensation, and a configurable time control (it's two constants
+in `src/protocol.ts`).
 
 ```sh
 npm run server:dev                                  # local server on :8787
