@@ -19,8 +19,13 @@ npm run build      # typecheck + static build into dist/
 npm run preview    # serve dist/
 ```
 
-`dist/` is a fully static, offline-capable bundle with relative paths, so it can
-be hosted anywhere (GitHub Pages, Netlify, S3) or loaded from `file://`.
+`dist/` is a fully static bundle with relative paths and no network requests,
+so it can be hosted anywhere (GitHub Pages, Netlify, S3) or loaded from `file://`.
+
+Live at **https://lieuzhenghong.github.io/dropship-chess/**.
+`.github/workflows/deploy.yml` runs the tests and build on every PR, and on each
+push to `master` it publishes `dist/` to the `gh-pages` branch, which Pages
+serves.
 
 ## Rules
 
