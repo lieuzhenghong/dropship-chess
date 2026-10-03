@@ -23,19 +23,26 @@ function seeded(seed: number): () => number {
 describe('chooseMove', () => {
   it('captures the king when it can', () => {
     const s = fromDiagram(['k.....', '......', '......', '......', '......', 'R....K']);
-    expect(chooseMove(s, undefined, seeded(1))).toEqual({ type: 'move', from: square(5, 0), to: 0 });
+    expect(chooseMove(s, { maxDepth: 3, timeMs: Infinity, rng: seeded(1) })).toEqual({ type: 'move', from: square(5, 0), to: 0 });
   });
 
   it('takes a hanging queen', () => {
     const s = fromDiagram(['k.....', '......', '..q...', '......', '......', '..R..K']);
-    expect(chooseMove(s, undefined, seeded(2))).toEqual({ type: 'move', from: square(5, 2), to: square(2, 2) });
+    expect(chooseMove(s, { maxDepth: 3, timeMs: Infinity, rng: seeded(2) })).toEqual({ type: 'move', from: square(5, 2), to: square(2, 2) });
   });
 
   it('does not grab a defended pawn with its queen', () => {
     // Qxb5 wins a pawn, but the c6 pawn then recaptures the queen.
     const s = fromDiagram(['k.p...', '.p....', '......', '......', '.Q....', '.....K']);
-    const move = chooseMove(s, undefined, seeded(3));
+    const move = chooseMove(s, { maxDepth: 3, timeMs: Infinity, rng: seeded(3) });
     expect(move).not.toEqual({ type: 'move', from: square(4, 1), to: square(1, 1) });
+  });
+
+  it('stays within its time budget', () => {
+    const t0 = Date.now();
+    expect(chooseMove(initialState(), { timeMs: 50, maxDepth: 20 })).not.toBeNull();
+    // The clock is checked every 1024 nodes, so allow a little slack.
+    expect(Date.now() - t0).toBeLessThan(250);
   });
 
   it('returns null when the game is over', () => {
@@ -46,7 +53,7 @@ describe('chooseMove', () => {
     let s = initialState();
     const rng = seeded(4);
     for (let ply = 0; ply < 80 && !s.winner; ply++) {
-      const move = chooseMove(s, undefined, rng)!;
+      const move = chooseMove(s, { maxDepth: 3, timeMs: Infinity, rng })!;
       expect(isLegal(s, move)).toBe(true);
       s = applyMove(s, move);
     }

@@ -11,10 +11,12 @@
     "typecheck": "tsc --noEmit && tsc -p server --noEmit",
     "sprites": "node scripts/extract-sprites.mjs",
     "server:dev": "wrangler dev",
-    "server:deploy": "wrangler deploy"
+    "server:deploy": "wrangler deploy",
+    "ai:match": "esbuild scripts/ai-match.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.cache/ai-match.mjs && node node_modules/.cache/ai-match.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261003.1",
+    "esbuild": "^0.28.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.2",
     "vitest": "^5.0.3",
