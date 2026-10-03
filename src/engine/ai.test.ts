@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseMove } from './ai';
+import { chooseMove, evaluate } from './ai';
 import { applyMove, type GameState, initialState, isLegal, type Piece, SQUARES, square } from './rules';
 
 function fromDiagram(rows: string[], turn: 'w' | 'b' = 'w'): GameState {
@@ -36,6 +36,23 @@ describe('chooseMove', () => {
     const s = fromDiagram(['k.p...', '.p....', '......', '......', '.Q....', '.....K']);
     const move = chooseMove(s, { maxDepth: 3, timeMs: Infinity, rng: seeded(3) });
     expect(move).not.toEqual({ type: 'move', from: square(4, 1), to: square(1, 1) });
+  });
+
+  it('with quiescence, sees the recapture even at depth 1', () => {
+    const s = fromDiagram(['k.p...', '.p....', '......', '......', '.Q....', '.....K']);
+    const grab = { type: 'move', from: square(4, 1), to: square(1, 1) };
+    const opts = { maxDepth: 1, timeMs: Infinity, rng: seeded(3) };
+    // At depth 1 alone the search stops after Qxb5 and counts a pawn won.
+    expect(chooseMove(s, opts)).toEqual(grab);
+    expect(chooseMove(s, { ...opts, quiescence: true })).not.toEqual(grab);
+  });
+
+  it('king safety penalises an exposed King when the opponent can drop', () => {
+    const s = fromDiagram(['k.....', '......', '......', '......', '......', '.....K']);
+    const blackHolds = { ...s, hands: { ...s.hands, b: { ...s.hands.b, N: 1 } } };
+    expect(evaluate(blackHolds, 'w', true)).toBeLessThan(evaluate(blackHolds, 'w'));
+    // Symmetric position, nothing in hand: no difference.
+    expect(evaluate(s, 'w', true)).toBe(evaluate(s, 'w'));
   });
 
   it('stays within its time budget', () => {

@@ -13,7 +13,21 @@
 // Root moves are shuffled first, so equally scored moves vary between games.
 // scripts/ai-match.ts measures this against the original fixed-depth AI.
 
-import { allMoves, applyMove, type Colour, type GameState, HAND_KINDS, type Kind, type Move, other } from './rules';
+import {
+  allMoves,
+  applyMove,
+  type Colour,
+  col,
+  type GameState,
+  HAND_KINDS,
+  type Kind,
+  type Move,
+  other,
+  pieceTargets,
+  row,
+  SIZE,
+  SQUARES,
+} from './rules';
 
 const VALUE: Record<Kind, number> = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
 const WIN = 1000;
@@ -24,12 +38,47 @@ export interface SearchOptions {
   /** Never search deeper than this many plies. */
   maxDepth?: number;
   rng?: () => number;
+  /** At the depth limit, keep searching captures until the position is quiet. */
+  quiescence?: boolean;
+  /** Penalise attacked and droppable squares around each King. */
+  kingSafety?: boolean;
+  /** Filled in with the deepest completed search depth, for measurement. */
+  stats?: { depth: number };
 }
 
 const DEFAULTS = { timeMs: 250, maxDepth: 8 };
 
+/** Penalty per square next to a King that the opponent attacks. */
+const ATTACKED_PENALTY = 0.5;
+/** Penalty per empty square next to a King while the opponent holds a piece to drop. */
+const DROPPABLE_PENALTY = 0.25;
+
+/** How exposed `colour`'s King is: attacked neighbours, and empty ones the opponent could drop onto. */
+function kingDanger(state: GameState, colour: Colour): number {
+  const king = state.board.findIndex((p) => p?.kind === 'K' && p.colour === colour);
+  if (king < 0) return 0;
+  const enemy = other(colour);
+  const attacked = new Set<number>();
+  for (let sq = 0; sq < SQUARES; sq++) {
+    if (state.board[sq]?.colour === enemy) for (const t of pieceTargets(state.board, sq)) attacked.add(t);
+  }
+  const canDrop = HAND_KINDS.some((k) => state.hands[enemy][k] > 0);
+  let danger = 0;
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const r = row(king) + dr;
+      const c = col(king) + dc;
+      if ((!dr && !dc) || r < 0 || r >= SIZE || c < 0 || c >= SIZE) continue;
+      const sq = r * SIZE + c;
+      if (attacked.has(sq)) danger += ATTACKED_PENALTY;
+      if (canDrop && !state.board[sq]) danger += DROPPABLE_PENALTY;
+    }
+  }
+  return danger;
+}
+
 /** Material balance from `colour`'s point of view, counting pieces in hand. */
-export function evaluate(state: GameState, colour: Colour): number {
+export function evaluate(state: GameState, colour: Colour, kingSafety = false): number {
   if (state.winner) return state.winner === colour ? WIN : -WIN;
   let score = 0;
   for (const p of state.board) {
@@ -38,6 +87,7 @@ export function evaluate(state: GameState, colour: Colour): number {
   for (const kind of HAND_KINDS) {
     score += VALUE[kind] * (state.hands[colour][kind] - state.hands[other(colour)][kind]);
   }
+  if (kingSafety) score += kingDanger(state, other(colour)) - kingDanger(state, colour);
   return score;
 }
 
@@ -71,11 +121,38 @@ export function chooseMove(state: GameState, opts: SearchOptions = {}): Move | n
   const rng = opts.rng ?? Math.random;
   const deadline = Date.now() + timeMs;
   let nodes = 0;
-
-  function negamax(s: GameState, depth: number, alpha: number, beta: number): number {
+  const tick = () => {
     // Checking the clock is cheap, but not free; do it every 1024 nodes.
     if ((++nodes & 1023) === 0 && Date.now() > deadline) throw new Timeout();
-    if (depth === 0 || s.winner) return evaluate(s, s.turn);
+  };
+  const evaluateHere = (s: GameState) => evaluate(s, s.turn, opts.kingSafety);
+
+  /** Captures only, until none is worth making; the side to move may also "stand pat". */
+  function quiesce(s: GameState, alpha: number, beta: number): number {
+    tick();
+    const stand = evaluateHere(s);
+    if (stand >= beta) return stand;
+    if (stand > alpha) alpha = stand;
+    const captures: Move[] = [];
+    for (let from = 0; from < SQUARES; from++) {
+      if (s.board[from]?.colour !== s.turn) continue;
+      for (const to of pieceTargets(s.board, from)) {
+        if (s.board[to]) captures.push({ type: 'move', from, to });
+      }
+    }
+    for (const move of ordered(s, captures)) {
+      const next = applyMove(s, move);
+      const score = next.winner ? WIN : -quiesce(next, -beta, -alpha);
+      if (score >= beta) return score;
+      if (score > alpha) alpha = score;
+    }
+    return alpha;
+  }
+
+  function negamax(s: GameState, depth: number, alpha: number, beta: number): number {
+    tick();
+    if (s.winner) return evaluateHere(s);
+    if (depth === 0) return opts.quiescence ? quiesce(s, alpha, beta) : evaluateHere(s);
     let best = -Infinity;
     for (const move of ordered(s, allMoves(s))) {
       const next = applyMove(s, move);
@@ -108,6 +185,7 @@ export function chooseMove(state: GameState, opts: SearchOptions = {}): Move | n
       throw e;
     }
     best = bestAtDepth!;
+    if (opts.stats) opts.stats.depth = depth;
     // A forced win needs no deeper search.
     if (bestScore >= WIN) break;
     // Search the best move first next time: it tightens the window early.
