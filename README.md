@@ -112,19 +112,25 @@ Results at the time of writing, 200 games per match, every searching bot at
 | q vs plain | 80% ± 6% | about +240 |
 | ks vs plain | 45% ± 7% | not significant |
 | qks vs q | 66% ± 7% | about +110 |
+| qks vs plain | 82% ± 5% | about +260 |
+| qks vs ks | 83% ± 5% | about +280 |
+| qks vs baseline | 97% ± 3% (193–6) | about +590 |
 | fairy vs qks | 94% ± 3% (188–11, 1 draw) | about +490 |
 | fairy vs plain | 98% ± 2% (196–3, 1 draw) | about +700, very uncertain |
 
-Scores near 100% pin down Elo poorly, so the ladder doesn't add up exactly:
-chaining plain → q → qks gives about +350, while the two Fairy-Stockfish
-matches differ by about +210. Either way the app's AI is now well clear of
-where it was, and still far below a real engine at equal time.
+The direct comparisons don't fully add up, which is normal for engine
+matches: results aren't perfectly transitive, and scores near 100% pin down
+Elo poorly. Chaining plain → q → qks predicts about +350 for qks over plain,
+but they score +260 head to head, about the same as q alone (+240). So king
+safety clearly beats quiescence-only head to head (66%), but adds little
+against the plain search. Either way, qks wins every head-to-head it has
+played except against Fairy-Stockfish, so it's the app's AI.
 
-Quiescence was the biggest single gain. King safety only helped once
-quiescence was in. My guess at why: without quiescence, positions are
-evaluated mid-exchange, and the material swings swamp the king-safety term,
-which also costs most of a ply of depth (average depth 3.1 with it, 4.1
-without, at 50 ms).
+Quiescence was the biggest single gain: it adds about +240 to +280 on top of
+either plain or king safety. King safety alone doesn't help (45% vs plain), probably
+because without quiescence, positions are evaluated mid-exchange and material
+swings swamp it, while it costs most of a ply of depth (average depth 3.2 with
+it, 4.0–4.5 without, at 50 ms).
 
 The `fairy` bot needs a local build: `sh scripts/fairy/setup.sh` clones
 Fairy-Stockfish, applies a small patch (a pawn-only drop region, for the "no
