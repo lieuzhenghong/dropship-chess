@@ -54,10 +54,15 @@ test('local play: move, capture, drop', async ({ browser }) => {
   expect(errors).toEqual([]);
 });
 
-test('vs computer: it replies to a move', async ({ browser }) => {
+test('vs computer: pick a difficulty, and it replies to a move', async ({ browser }) => {
   const { page, errors } = await open(browser);
   await page.getByRole('button', { name: 'New' }).click();
+  const slider = page.getByRole('slider');
+  await expect(page.locator('dialog[open] .difficulty')).toContainText('Computer: Medium');
+  await slider.fill('2');
+  await expect(page.locator('dialog[open] .difficulty')).toContainText('Computer: Hard');
   await page.locator('dialog[open] button[value=ai]').click();
+  expect(await page.evaluate(() => localStorage.getItem('dropship-chess:difficulty'))).toBe('hard');
   await expect(status(page)).toHaveText(/^Your move/); // the computer opens if it's White
   // Your colour is at the bottom: the board is flipped when the computer is White.
   const computer = await page.evaluate(() => localStorage.getItem('dropship-chess:mode'));

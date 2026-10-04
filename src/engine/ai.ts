@@ -52,6 +52,22 @@ export interface SearchOptions {
 
 const DEFAULTS = { timeMs: 250, maxDepth: 8, quiescence: true, kingSafety: true };
 
+export type Difficulty = 'easy' | 'medium' | 'hard';
+export const DIFFICULTIES: readonly Difficulty[] = ['easy', 'medium', 'hard'];
+
+/**
+ * Settings per difficulty, in measured order of strength (scripts/ai-match.ts):
+ * hard beats medium about 82% of the time, and medium beats easy about 89%.
+ */
+export const DIFFICULTY: Record<Difficulty, SearchOptions> = {
+  // The original AI: a fixed 3-ply search counting material only. (The time
+  // limit is only a safety net; 3 plies take a few milliseconds.)
+  easy: { maxDepth: 3, timeMs: 1000, quiescence: false, kingSafety: false },
+  // Searches as deep as the time budget allows, still counting material only.
+  medium: { quiescence: false, kingSafety: false },
+  hard: {},
+};
+
 /** Penalty per square next to a King that the opponent attacks. */
 const ATTACKED_PENALTY = 0.5;
 /** Penalty per empty square next to a King while the opponent holds a piece to drop. */

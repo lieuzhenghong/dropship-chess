@@ -66,8 +66,19 @@ Changes from the original Jack version:
 
 ## Computer opponent
 
-Choose "vs computer" under **New**; you get a random colour. `src/engine/ai.ts`
-is a negamax search with alpha-beta pruning:
+Choose "vs computer" under **New**; you get a random colour. The slider under
+it sets the difficulty, which takes effect from the computer's next move:
+
+- **Easy:** the original AI, a fixed 3-ply search counting material only.
+- **Medium:** searches as deep as 250 ms allows, still counting material only.
+- **Hard:** the full search below, with quiescence and king safety.
+
+Each level beats the one below it most of the time: hard beats medium 82% of
+the time and medium beats easy 89% (see the results below, where they appear
+as `qks`, `plain` and `baseline`). How they compare with human players hasn't
+been measured.
+
+`src/engine/ai.ts` is a negamax search with alpha-beta pruning:
 
 - **Iterative deepening:** it searches 1 ply ahead, then 2, 3, and so on,
   until a 250 ms budget runs out, and plays the best move from the deepest
@@ -96,10 +107,11 @@ plies count as draws. The bots:
 | Bot | What it is |
 |---|---|
 | `random` | Any legal move |
-| `baseline` | The original AI: fixed 3-ply search, material only (`scripts/ai-baseline.ts`) |
-| `plain` | Iterative deepening, material only (the app's AI before quiescence and king safety) |
+| `baseline` | The original AI: fixed 3-ply search, material only (`scripts/ai-baseline.ts`); the app's AI on Easy |
+| `plain` | Iterative deepening, material only: the app's AI on Medium |
 | `q`, `ks` | `plain` plus quiescence, or plus king safety |
-| `qks` | Both: the app's AI |
+| `qks` | Both: the app's AI on Hard |
+| `easy`, `medium`, `hard` | The app's difficulty settings (`DIFFICULTY` in `ai.ts`); easy vs baseline scored 53% ± 7%, i.e. the same AI |
 | `fairy` | [Fairy-Stockfish](https://github.com/fairy-stockfish/Fairy-Stockfish), a strong open-source variant engine, as the top bookend |
 
 Results at the time of writing, 200 games per match, every searching bot at

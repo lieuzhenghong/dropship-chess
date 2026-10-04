@@ -9,14 +9,15 @@
 //   plain     iterative deepening within timeMs per move, material-only
 //   q         plain + quiescence search
 //   ks        plain + king safety in the evaluation
-//   qks       plain + both: the app's AI
+//   qks       plain + both
+//   easy, medium, hard   the app's difficulty settings (see DIFFICULTY in ai.ts)
 //   fairy     Fairy-Stockfish, timeMs per move (build it: sh scripts/fairy/setup.sh)
 //
 // Each pair plays one shuffled start twice with colours swapped, so neither
 // side benefits from a lucky position or from moving first. Games reaching
 // MAX_PLIES are scored as draws.
 
-import { chooseMove, type SearchOptions } from '../src/engine/ai';
+import { chooseMove, DIFFICULTY, type SearchOptions } from '../src/engine/ai';
 import { allMoves, applyMove, type Colour, type GameState, initialState, type Move, randomBackRank } from '../src/engine/rules';
 import { chooseMove as baselineMove } from './ai-baseline';
 import { Fairy, fromUci, toUci } from './fairy/engine';
@@ -51,6 +52,9 @@ const BOTS: Record<string, Bot> = {
   q: search({ quiescence: true, kingSafety: false }),
   ks: search({ quiescence: false, kingSafety: true }),
   qks: search({ quiescence: true, kingSafety: true }),
+  easy: search(DIFFICULTY.easy),
+  medium: search(DIFFICULTY.medium),
+  hard: search(DIFFICULTY.hard),
 };
 
 let fairy: Fairy | null = null;
