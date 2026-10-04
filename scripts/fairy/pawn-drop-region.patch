@@ -1,0 +1,37 @@
+diff --git a/src/parser.cpp b/src/parser.cpp
+index 96f3504..f493f55 100644
+--- a/src/parser.cpp
++++ b/src/parser.cpp
+@@ -465,6 +465,8 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
+     parse_attribute("enclosingDropStart", v->enclosingDropStart);
+     parse_attribute("dropRegionWhite", v->dropRegion[WHITE]);
+     parse_attribute("dropRegionBlack", v->dropRegion[BLACK]);
++    parse_attribute("pawnDropRegionWhite", v->pawnDropRegion[WHITE]);
++    parse_attribute("pawnDropRegionBlack", v->pawnDropRegion[BLACK]);
+     parse_attribute("sittuyinRookDrop", v->sittuyinRookDrop);
+     parse_attribute("dropOppositeColoredBishop", v->dropOppositeColoredBishop);
+     parse_attribute("dropPromoted", v->dropPromoted);
+diff --git a/src/position.h b/src/position.h
+index 685c079..bdfc934 100644
+--- a/src/position.h
++++ b/src/position.h
+@@ -711,6 +711,7 @@ inline Bitboard Position::drop_region(Color c, PieceType pt) const {
+   // Pawns on back ranks
+   if (pt == PAWN)
+   {
++      b &= var->pawnDropRegion[c];
+       if (!var->promotionZonePawnDrops)
+           b &= ~promotion_zone(c);
+       if (!first_rank_pawn_drops())
+diff --git a/src/variant.h b/src/variant.h
+index 0e6d44c..6be1eea 100644
+--- a/src/variant.h
++++ b/src/variant.h
+@@ -98,6 +98,7 @@ struct Variant {
+   EnclosingRule enclosingDrop = NO_ENCLOSING;
+   Bitboard enclosingDropStart = 0;
+   Bitboard dropRegion[COLOR_NB] = {AllSquares, AllSquares};
++  Bitboard pawnDropRegion[COLOR_NB] = {AllSquares, AllSquares};
+   bool sittuyinRookDrop = false;
+   bool dropOppositeColoredBishop = false;
+   bool dropPromoted = false;

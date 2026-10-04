@@ -6,12 +6,16 @@
 // - Move ordering: captures first (most valuable victim, then least valuable
 //   attacker), and the previous iteration's best move first at the root. This
 //   makes alpha-beta prune far more, which is what pays for the extra depth.
-// - Evaluation: material only, counting pieces in hand. (A hand-piece bonus
-//   and an advanced-pawn bonus were tried; ai-match showed no measurable gain,
-//   so they were dropped.)
+// - Quiescence: at the depth limit, captures are searched until the position
+//   is quiet, so it doesn't count a piece as won when it's about to be
+//   recaptured.
+// - Evaluation: material, counting pieces in hand, plus a penalty for squares
+//   next to each King that the opponent attacks or could drop onto. (A
+//   hand-piece bonus and an advanced-pawn bonus were tried; ai-match showed no
+//   measurable gain, so they were dropped.)
 //
 // Root moves are shuffled first, so equally scored moves vary between games.
-// scripts/ai-match.ts measures this against the original fixed-depth AI.
+// scripts/ai-match.ts measures changes; see the README for results.
 
 import {
   allMoves,
@@ -38,15 +42,15 @@ export interface SearchOptions {
   /** Never search deeper than this many plies. */
   maxDepth?: number;
   rng?: () => number;
-  /** At the depth limit, keep searching captures until the position is quiet. */
+  /** At the depth limit, keep searching captures until the position is quiet. Default on. */
   quiescence?: boolean;
-  /** Penalise attacked and droppable squares around each King. */
+  /** Penalise attacked and droppable squares around each King. Default on. */
   kingSafety?: boolean;
   /** Filled in with the deepest completed search depth, for measurement. */
   stats?: { depth: number };
 }
 
-const DEFAULTS = { timeMs: 250, maxDepth: 8 };
+const DEFAULTS = { timeMs: 250, maxDepth: 8, quiescence: true, kingSafety: true };
 
 /** Penalty per square next to a King that the opponent attacks. */
 const ATTACKED_PENALTY = 0.5;
@@ -117,7 +121,7 @@ function shuffle<T>(xs: T[], rng: () => number): T[] {
 
 /** Picks a move for the side to move, or null if the game is over. */
 export function chooseMove(state: GameState, opts: SearchOptions = {}): Move | null {
-  const { timeMs, maxDepth } = { ...DEFAULTS, ...opts };
+  const { timeMs, maxDepth, quiescence, kingSafety } = { ...DEFAULTS, ...opts };
   const rng = opts.rng ?? Math.random;
   const deadline = Date.now() + timeMs;
   let nodes = 0;
@@ -125,7 +129,7 @@ export function chooseMove(state: GameState, opts: SearchOptions = {}): Move | n
     // Checking the clock is cheap, but not free; do it every 1024 nodes.
     if ((++nodes & 1023) === 0 && Date.now() > deadline) throw new Timeout();
   };
-  const evaluateHere = (s: GameState) => evaluate(s, s.turn, opts.kingSafety);
+  const evaluateHere = (s: GameState) => evaluate(s, s.turn, kingSafety);
 
   /** Captures only, until none is worth making; the side to move may also "stand pat". */
   function quiesce(s: GameState, alpha: number, beta: number): number {
@@ -152,7 +156,7 @@ export function chooseMove(state: GameState, opts: SearchOptions = {}): Move | n
   function negamax(s: GameState, depth: number, alpha: number, beta: number): number {
     tick();
     if (s.winner) return evaluateHere(s);
-    if (depth === 0) return opts.quiescence ? quiesce(s, alpha, beta) : evaluateHere(s);
+    if (depth === 0) return quiescence ? quiesce(s, alpha, beta) : evaluateHere(s);
     let best = -Infinity;
     for (const move of ordered(s, allMoves(s))) {
       const next = applyMove(s, move);

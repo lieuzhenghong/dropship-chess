@@ -42,9 +42,9 @@ describe('chooseMove', () => {
     const s = fromDiagram(['k.p...', '.p....', '......', '......', '.Q....', '.....K']);
     const grab = { type: 'move', from: square(4, 1), to: square(1, 1) };
     const opts = { maxDepth: 1, timeMs: Infinity, rng: seeded(3) };
-    // At depth 1 alone the search stops after Qxb5 and counts a pawn won.
-    expect(chooseMove(s, opts)).toEqual(grab);
-    expect(chooseMove(s, { ...opts, quiescence: true })).not.toEqual(grab);
+    // Without it, the search stops after Qxb5 and counts a pawn won.
+    expect(chooseMove(s, { ...opts, quiescence: false })).toEqual(grab);
+    expect(chooseMove(s, opts)).not.toEqual(grab);
   });
 
   it('king safety penalises an exposed King when the opponent can drop', () => {
