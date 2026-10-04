@@ -53,9 +53,16 @@ for (const colour of ['W', 'B']) {
     if (!arrays[name]) throw new Error(`sprite ${name} not found`);
     // A few sprites have stray pixels on the outermost ring; clear it so the
     // background flood fill starts from a clean edge.
-    const rows = toRows(arrays[name]).map((row, r) =>
+    let rows = toRows(arrays[name]).map((row, r) =>
       r === 0 || r === 31 ? '0'.repeat(32) : '0' + row.slice(1, 31) + '0',
     );
+    // The white queen is drawn symmetric except for two slips on its left
+    // side (rows 6 and 25). Row 6 leaves the left orb and a crown spike open,
+    // so the flood fill leaked in and showed them as transparent holes.
+    // Mirror the right half onto the left, as in the black queen.
+    if (name === 'WQW') {
+      rows = rows.map((row) => [...row.slice(16)].reverse().join('') + row.slice(16));
+    }
     // Each row as a 32-bit hex string keeps the generated file compact.
     out[`${colour.toLowerCase()}${kind}`] = rows.map((row) =>
       parseInt(row.split('').reverse().join(''), 2).toString(16).padStart(8, '0'),
