@@ -14,7 +14,8 @@
     "server:deploy": "wrangler deploy",
     "ai:match": "esbuild scripts/ai-match.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.cache/ai-match.mjs && node node_modules/.cache/ai-match.mjs",
     "e2e": "playwright test",
-    "fairy:check": "esbuild scripts/fairy/check.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.cache/fairy-check.mjs && node node_modules/.cache/fairy-check.mjs"
+    "fairy:check": "esbuild scripts/fairy/check.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.cache/fairy-check.mjs && node node_modules/.cache/fairy-check.mjs",
+    "fairy:eval-starts": "esbuild scripts/fairy/eval-starts.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.cache/fairy-eval-starts.mjs && node node_modules/.cache/fairy-eval-starts.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261003.1",

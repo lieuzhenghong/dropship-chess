@@ -7,6 +7,8 @@ import {
   hasLegalMove,
   initialState,
   isLegal,
+  DEFAULT_BACK_RANK,
+  EXCLUDED_BACK_RANKS,
   randomBackRank,
   moveTargets,
   type Piece,
@@ -46,7 +48,7 @@ describe('initial position', () => {
     expect(s.turn).toBe('w');
   });
 
-  it('randomBackRank always deals R, R, Q, K, N, B and covers all 360 arrangements', () => {
+  it('randomBackRank deals R, R, Q, K, N, B in every allowed arrangement, and never an excluded one', () => {
     let seed = 7;
     const rng = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
     const seen = new Set<string>();
@@ -55,7 +57,10 @@ describe('initial position', () => {
       expect([...rank].sort().join('')).toBe('BKNQRR');
       seen.add(rank.join(''));
     }
-    expect(seen.size).toBe(360);
+    expect(EXCLUDED_BACK_RANKS.size).toBe(36);
+    expect(seen.size).toBe(360 - 36);
+    for (const r of EXCLUDED_BACK_RANKS) expect(seen.has(r)).toBe(false);
+    expect(EXCLUDED_BACK_RANKS.has(DEFAULT_BACK_RANK.join(''))).toBe(false);
   });
 });
 

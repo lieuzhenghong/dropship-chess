@@ -112,6 +112,21 @@ export class Fairy {
     return best;
   }
 
+  /**
+   * The engine's evaluation of `start` after searching `movetime` ms, from
+   * the side to move's view: centipawns, or `mate N`.
+   */
+  async evaluate(start: GameState, movetime: number): Promise<number | string> {
+    await this.position(start, []);
+    let score: number | string = 0;
+    await this.request(`go movetime ${movetime}`, (l) => {
+      const m = / score (cp|mate) (-?\d+)/.exec(l);
+      if (m) score = m[1] === 'cp' ? Number(m[2]) : `mate ${m[2]}`;
+      return l.startsWith('bestmove');
+    });
+    return score;
+  }
+
   /** Every legal move after `moves` from `start`, in UCI notation. */
   async legalMoves(start: GameState, moves: readonly string[]): Promise<string[]> {
     await this.position(start, moves);
