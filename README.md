@@ -112,8 +112,13 @@ Results at the time of writing, 200 games per match, every searching bot at
 | q vs plain | 80% ± 6% | about +240 |
 | ks vs plain | 45% ± 7% | not significant |
 | qks vs q | 66% ± 7% | about +110 |
-| fairy vs qks | FAIRY_QKS | FAIRY_QKS_ELO |
-| fairy vs plain | FAIRY_PLAIN | FAIRY_PLAIN_ELO |
+| fairy vs qks | 94% ± 3% (188–11, 1 draw) | about +490 |
+| fairy vs plain | 98% ± 2% (196–3, 1 draw) | about +700, very uncertain |
+
+Scores near 100% pin down Elo poorly, so the ladder doesn't add up exactly:
+chaining plain → q → qks gives about +350, while the two Fairy-Stockfish
+matches differ by about +210. Either way the app's AI is now well clear of
+where it was, and still far below a real engine at equal time.
 
 Quiescence was the biggest single gain. King safety only helped once
 quiescence was in. My guess at why: without quiescence, positions are
