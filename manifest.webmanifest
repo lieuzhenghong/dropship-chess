@@ -1,0 +1,17 @@
+{
+  "name": "Dropship Chess",
+  "short_name": "Dropship",
+  "description": "Chess on a 6×6 board where captured pieces switch sides and drop back in.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#e8e2c8",
+  "theme_color": "#3d4a3c",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
