@@ -35,7 +35,8 @@ serves.
   front. The back rank is shuffled at the start of every game, and Black's
   mirrors White's (same piece on the same file), so the only asymmetry is
   that White moves first. With one bishop each and no castling, none of
-  chess960's placement rules are needed, so all 360 arrangements can come up.
+  chess960's placement rules are needed. Of the 360 arrangements, 36 are
+  never dealt because they hand White a near-forced win (see below).
   Online, the server deals the position so both players get the same one.
 - Moves are standard chess, except that pawns only ever step one square.
   There's no castling and no en passant.
@@ -144,6 +145,19 @@ because without quiescence, positions are evaluated mid-exchange and material
 swings swamp it, while it costs most of a ply of depth (average depth 3.2 with
 it, 4.0–4.5 without, at 50 ms).
 
+### Lopsided starting positions
+
+Across all 360 back ranks, Fairy-Stockfish found no overall first-move
+advantage (White scored 51% ± 5% in 350 self-play games), but a tail of
+starts is close to a forced win for White. `npm run fairy:eval-starts`
+evaluates every starting position: most are between −1.1 and +0.5 pawns, but
+36 are at +1.00 or more for White, up to +11. In self-play, the eight worst
+gave White 28 to 30 wins out of 30. Nearly all have the knight two files
+from the King: White's knight jumps out, takes an undefended pawn and attacks
+the enemy King, a move before Black's knight can do the same. These 36 are
+listed in `EXCLUDED_BACK_RANKS` (`src/engine/rules.ts`) and never dealt. No
+start strongly favours Black; the most Black-leaning is −1.1.
+
 The `fairy` bot needs a local build: `sh scripts/fairy/setup.sh` clones
 Fairy-Stockfish, applies a small patch (a pawn-only drop region, for the "no
 pawn drops into the opponent's back two ranks" rule) and builds it into
@@ -234,7 +248,7 @@ server/
   src/index.ts          Worker entry + Durable Object (one per game)
 scripts/
   ai-match.ts           plays any two bots against each other: npm run ai:match
-  fairy/                Fairy-Stockfish setup, variant config and rules check
+  fairy/                Fairy-Stockfish setup, variant config, rules check, start evaluation
   extract-sprites.mjs   node scripts/extract-sprites.mjs path/to/SpriteSheet.jack
   make-icons.mjs        regenerates public/icon*.{svg,png}
 ```

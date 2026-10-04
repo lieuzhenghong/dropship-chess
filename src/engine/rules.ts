@@ -73,17 +73,33 @@ export const DEFAULT_BACK_RANK: readonly Kind[] = ['R', 'N', 'Q', 'K', 'B', 'R']
 const BACK_RANK_PIECES: readonly Kind[] = ['R', 'R', 'Q', 'K', 'N', 'B'];
 
 /**
+ * Back ranks never dealt, because they hand White a near-forced win: a
+ * Fairy-Stockfish evaluation of the starting position of +1.00 or more for
+ * White (scripts/fairy/eval-starts.ts regenerates the list). Nearly all have
+ * the knight two files from the King, so White's knight can raid the enemy
+ * King a move before Black's can; the worst won 30 of 30 engine games.
+ */
+export const EXCLUDED_BACK_RANKS: ReadonlySet<string> = new Set([
+  'BKRNRQ', 'BKRQRN', 'BNRKRQ', 'BQKRNR', 'BQRKRN', 'BQRNRK', 'BRKQRN', 'BRNRKQ', 'BRQKRN',
+  'KBRQRN', 'KRNRBQ', 'KRNRQB', 'NRKBQR', 'NRKBRQ', 'NRKQBR', 'NRKQRB', 'NRKRBQ', 'NRKRQB',
+  'NRQKBR', 'NRQKRB', 'NRQRBK', 'NRQRKB', 'QBKRNR', 'QBRKRN', 'QBRNRK', 'QKRNRB', 'QRBKRN',
+  'QRNRBK', 'QRNRKB', 'RBKQRN', 'RBQKRN', 'RNRBKQ', 'RNRKBQ', 'RNRKQB', 'RNRQBK', 'RQBKRN',
+]);
+
+/**
  * A random arrangement of R, R, Q, K, N, B. With one bishop each and no
- * castling, none of chess960's placement rules are needed: all 360 distinct
- * arrangements are allowed.
+ * castling, none of chess960's placement rules are needed; of the 360
+ * distinct arrangements, all but EXCLUDED_BACK_RANKS are dealt.
  */
 export function randomBackRank(rng: () => number = Math.random): Kind[] {
-  const rank = [...BACK_RANK_PIECES];
-  for (let i = rank.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [rank[i], rank[j]] = [rank[j], rank[i]];
+  for (;;) {
+    const rank = [...BACK_RANK_PIECES];
+    for (let i = rank.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [rank[i], rank[j]] = [rank[j], rank[i]];
+    }
+    if (!EXCLUDED_BACK_RANKS.has(rank.join(''))) return rank;
   }
-  return rank;
 }
 
 /** The starting position for `backRank` (files a–f), mirrored for Black. */
