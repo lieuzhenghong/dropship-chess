@@ -18,7 +18,7 @@ import {
   SIZE,
   SQUARES,
 } from '../engine/rules';
-import { chooseMove } from '../engine/ai';
+import { chooseMove, DIFFICULTIES, DIFFICULTY, type Difficulty } from '../engine/ai';
 import { createWebFeedback, type Feedback } from '../feedback';
 import * as fx from './fx';
 import { connect, type ConnectionStatus, newGameId, type OnlineGame, SERVER_URL } from '../online';
@@ -31,6 +31,8 @@ const PALETTE: Palette = { ink: '#263024', fill: '#f4efda' };
 const MAX_HISTORY = 400;
 const SEEN_HELP_KEY = 'dropship-chess:seen-help';
 const MODE_KEY = 'dropship-chess:mode';
+const DIFFICULTY_KEY = 'dropship-chess:difficulty';
+const DIFFICULTY_NAMES: Record<Difficulty, string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 /**
  * Pause before the computer starts thinking, so your move's animation can
  * finish first. Its search then takes up to 250 ms more.
@@ -107,6 +109,10 @@ export function mountApp(
     return m === 'w' || m === 'b' ? m : null;
   })();
   let aiTimer: ReturnType<typeof setTimeout> | undefined;
+  let difficulty: Difficulty = (() => {
+    const d = store.get(DIFFICULTY_KEY);
+    return DIFFICULTIES.includes(d as Difficulty) ? (d as Difficulty) : 'medium';
+  })();
 
   /** Set while playing online; the server's snapshot replaces local history. */
   let online: {
@@ -262,11 +268,23 @@ export function mountApp(
     <p class="warn">The current game will be lost.</p>
     <form method="dialog" class="stack">
       <button value="pvp" class="primary">2 players, one device</button>
-      <button value="ai" class="primary">vs computer</button>${
+      <button value="ai" class="primary">vs computer</button>
+      <label class="difficulty">
+        <span>Computer: <b class="level"></b></span>
+        <input type="range" min="0" max="${DIFFICULTIES.length - 1}" step="1">
+      </label>${
         SERVER_URL ? '<button value="online" class="primary">Online: invite a friend</button>' : ''}
       <button value="cancel">Cancel</button>
     </form>`;
   const warn = confirmDialog.querySelector<HTMLElement>('.warn')!;
+  const difficultyInput = confirmDialog.querySelector<HTMLInputElement>('.difficulty input')!;
+  const difficultyLabel = confirmDialog.querySelector<HTMLElement>('.difficulty .level')!;
+  const syncDifficulty = () => {
+    difficultyInput.value = String(DIFFICULTIES.indexOf(difficulty));
+    difficultyLabel.textContent = DIFFICULTY_NAMES[difficulty];
+    difficultyInput.setAttribute('aria-valuetext', DIFFICULTY_NAMES[difficulty]);
+  };
+  syncDifficulty();
 
   const gameEl = el('main', { className: 'game' }, hands.b.section, boardEl, hands.w.section);
   root.replaceChildren(
@@ -425,7 +443,7 @@ export function mountApp(
     if (!aiToMove()) return;
     aiTimer = setTimeout(() => {
       if (!aiToMove()) return;
-      const move = chooseMove(current());
+      const move = chooseMove(current(), DIFFICULTY[difficulty]);
       if (!move) return;
       commit(applyMove(current(), move));
       render();
@@ -653,6 +671,12 @@ export function mountApp(
     warn.hidden = online ? !!result() : history.length <= 1 || !!current().winner;
     confirmDialog.returnValue = '';
     confirmDialog.showModal();
+  });
+  // Takes effect from the computer's next move, so it also works mid-game.
+  difficultyInput.addEventListener('input', () => {
+    difficulty = DIFFICULTIES[Number(difficultyInput.value)];
+    store.set(DIFFICULTY_KEY, difficulty);
+    syncDifficulty();
   });
   confirmDialog.addEventListener('close', () => {
     const v = confirmDialog.returnValue;

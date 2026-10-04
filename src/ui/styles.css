@@ -581,6 +581,20 @@ button:not(.cell):active:not(:disabled) {
   align-items: stretch;
 }
 
+.sheet .difficulty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 4px 6px;
+  font-size: 0.9rem;
+}
+
+.sheet .difficulty input {
+  width: 100%;
+  min-height: 32px;
+  accent-color: var(--ink);
+}
+
 .sheet form button.primary {
   background: var(--ink);
   color: var(--paper);

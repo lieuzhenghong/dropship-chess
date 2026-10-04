@@ -66,9 +66,19 @@ Changes from the original Jack version:
 
 ## Computer opponent
 
-Choose "vs computer" under **New**; you get a random colour. It's meant as
-something to test against, not a strong player. `src/engine/ai.ts` is a
-negamax search with alpha-beta pruning:
+Choose "vs computer" under **New**; you get a random colour. The slider under
+it sets the difficulty, which takes effect from the computer's next move:
+
+- **Easy:** the original AI, a fixed 3-ply search counting material only.
+- **Medium:** searches as deep as 250 ms allows, still counting material only.
+- **Hard:** the full search below, with quiescence and king safety.
+
+Each level beats the one below it most of the time: hard beats medium 82% of
+the time and medium beats easy 89% (see the results below, where they appear
+as `qks`, `plain` and `baseline`). How they compare with human players hasn't
+been measured.
+
+`src/engine/ai.ts` is a negamax search with alpha-beta pruning:
 
 - **Iterative deepening:** it searches 1 ply ahead, then 2, 3, and so on,
   until a 250 ms budget runs out, and plays the best move from the deepest
@@ -76,24 +86,71 @@ negamax search with alpha-beta pruning:
 - **Move ordering:** captures first (most valuable victim, then least valuable
   attacker), with the previous iteration's best move first. This makes the
   pruning much more effective, which pays for the extra depth.
-- **Evaluation:** material only, counting pieces in hand. I also tried a
-  bonus for pieces in hand and one for advanced pawns. `ai:match` showed no
-  measurable gain (88% vs 90%, within noise), so they were left out.
+- **Quiescence:** at the depth limit it keeps searching captures until the
+  position is quiet, so it doesn't count a piece as won when it's about to be
+  recaptured.
+- **Evaluation:** material, counting pieces in hand, plus king safety: a
+  penalty for each square next to a King that the opponent attacks or, while
+  holding a piece, could drop onto. A bonus for pieces in hand and one for
+  advanced pawns were also tried, with no measurable gain.
 
-It has no positional understanding. Equal moves are chosen at
-random. Against the computer, Undo takes back your last move together with
-its reply.
+Equal moves are chosen at random. Against the computer, Undo takes back your
+last move together with its reply.
 
-To measure a change, `npm run ai:match -- [pairs] [timeMs]` plays the current
-AI against the original fixed 3-ply, material-only one
-(`scripts/ai-baseline.ts`). Each shuffled start is played twice with colours
-swapped, and it reports the score with a 95% confidence interval.
+### Measuring it
 
-Result at the time of writing (100 starts × both colours, new AI at 50 ms per
-move on a laptop, a fifth of its in-app budget): the new AI scored
-**90% ± 4%**, winning 180 games and losing 20. At about the same search depth
-as the old AI (5 ms per move) the two are even, so the gain comes from
-searching deeper, not from the evaluation.
+`npm run ai:match -- <botA> <botB> [pairs] [timeMs]` plays two bots against
+each other. Each shuffled start is played twice with colours swapped, and it
+reports A's score with a 95% confidence interval; games still going after 200
+plies count as draws. The bots:
+
+| Bot | What it is |
+|---|---|
+| `random` | Any legal move |
+| `baseline` | The original AI: fixed 3-ply search, material only (`scripts/ai-baseline.ts`); the app's AI on Easy |
+| `plain` | Iterative deepening, material only: the app's AI on Medium |
+| `q`, `ks` | `plain` plus quiescence, or plus king safety |
+| `qks` | Both: the app's AI on Hard |
+| `easy`, `medium`, `hard` | The app's difficulty settings (`DIFFICULTY` in `ai.ts`); easy vs baseline scored 53% ± 7%, i.e. the same AI |
+| `fairy` | [Fairy-Stockfish](https://github.com/fairy-stockfish/Fairy-Stockfish), a strong open-source variant engine, as the top bookend |
+
+Results at the time of writing, 200 games per match, every searching bot at
+50 ms per move (a fifth of the in-app budget) on a 4-core cloud VM:
+
+| Match | Score for the first | Elo difference |
+|---|---|---|
+| baseline vs random | 100% (200–0) | too large to estimate |
+| plain vs baseline | 89% ± 4% | about +360 |
+| q vs plain | 80% ± 6% | about +240 |
+| ks vs plain | 45% ± 7% | not significant |
+| qks vs q | 66% ± 7% | about +110 |
+| qks vs plain | 82% ± 5% | about +260 |
+| qks vs ks | 83% ± 5% | about +280 |
+| qks vs baseline | 97% ± 3% (193–6) | about +590 |
+| fairy vs qks | 94% ± 3% (188–11, 1 draw) | about +490 |
+| fairy vs plain | 98% ± 2% (196–3, 1 draw) | about +700, very uncertain |
+
+The direct comparisons don't fully add up, which is normal for engine
+matches: results aren't perfectly transitive, and scores near 100% pin down
+Elo poorly. Chaining plain → q → qks predicts about +350 for qks over plain,
+but they score +260 head to head, about the same as q alone (+240). So king
+safety clearly beats quiescence-only head to head (66%), but adds little
+against the plain search. Either way, qks wins every head-to-head it has
+played except against Fairy-Stockfish, so it's the app's AI.
+
+Quiescence was the biggest single gain: it adds about +240 to +280 on top of
+either plain or king safety. King safety alone doesn't help (45% vs plain), probably
+because without quiescence, positions are evaluated mid-exchange and material
+swings swamp it, while it costs most of a ply of depth (average depth 3.2 with
+it, 4.0–4.5 without, at 50 ms).
+
+The `fairy` bot needs a local build: `sh scripts/fairy/setup.sh` clones
+Fairy-Stockfish, applies a small patch (a pawn-only drop region, for the "no
+pawn drops into the opponent's back two ranks" rule) and builds it into
+`node_modules/.cache`. `scripts/fairy/dropship.ini` describes the variant, and
+`npm run fairy:check` confirms it matches the app's rules by comparing legal
+moves at every position of random games (18,000 positions, no differences).
+The engine is GPL-3 and only used offline; it isn't part of the app.
 
 ## Online play
 
@@ -176,7 +233,8 @@ server/
   src/room.ts           authoritative game + clock logic (pure, tested)
   src/index.ts          Worker entry + Durable Object (one per game)
 scripts/
-  ai-match.ts           new AI vs the original (scripts/ai-baseline.ts): npm run ai:match
+  ai-match.ts           plays any two bots against each other: npm run ai:match
+  fairy/                Fairy-Stockfish setup, variant config and rules check
   extract-sprites.mjs   node scripts/extract-sprites.mjs path/to/SpriteSheet.jack
   make-icons.mjs        regenerates public/icon*.{svg,png}
 ```
